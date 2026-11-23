@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="description" content="P2H dan kebersihan kendaraan: inspeksi, live camera evidence, tanda tangan dan PDF lampiran.">
+  <title>FleetCheck • P2H & Kebersihan Truck</title>
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <script defer src="config.js"></script>
+  <script defer src="master-map.js"></script>
+  <script defer src="pdf-reports.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">▦</span><div><b>FleetCheck</b><small>Vehicle Inspection System</small></div></div>
+    <div class="topbar-right"><span class="top-pill"><span class="pulse"></span> Live Camera Only</span><span class="version">R3 • Cloud</span></div>
+  </header>
+  <main class="layout">
+    <section class="hero">
+      <div><span class="overline">DIGITAL VEHICLE CONTROL</span><h1>P2H & Kebersihan Truck</h1><p>Checklist kendaraan, bukti foto kamera langsung, dan dokumentasi yang tersimpan rapi.</p></div>
+      <div class="hero-stat"><span>26</span><small>Item Checklist P2H</small><div class="hero-stat-minor">8 foto wajib A–H</div></div>
+    </section>
+    <section class="workspace">
+      <aside class="sidebar">
+        <div class="aside-label">WORKSPACE</div>
+        <button class="nav active" data-view="p2h" type="button"><span>☷</span><b>P2H Kendaraan</b><em>26</em></button>
+        <button class="nav" data-view="clean" type="button"><span>▧</span><b>Kebersihan Truck</b></button>
+        <button class="nav" data-view="history" type="button"><span>▤</span><b>Riwayat Form</b></button>
+        <div class="aside-separator"></div>
+        <div class="aside-label">AKSES PENYIMPANAN</div>
+        <label class="small-label" for="access-code">Kode akses petugas</label>
+        <input id="access-code" type="password" autocomplete="off" spellcheck="false" placeholder="Kode akses disediakan admin">
+        <small class="helper">Tidak disimpan di browser. Diperlukan untuk menyimpan data ke Google Sheets & Drive.</small>
+        <div class="aside-separator"></div>
+        <div class="aside-info"><b>Dokumentasi</b><p>Foto hanya bisa diambil dengan kamera aktif. Galeri/file picker tidak tersedia.</p><p>PDF P2H: halaman 1 form dengan header baru, selanjutnya 4 foto per halaman. Kebersihan: 4 foto wajib.</p></div>
+      </aside>
+      <section class="content">
+        <div class="content-head">
+          <div><span class="eyebrow" id="page-eyebrow">FORM INSPEKSI</span><h2 id="page-title">Pemeriksaan P2H</h2><p id="page-subtitle">Pemeriksaan kelayakan & perlengkapan container dan truck vendor.</p></div>
+          <span class="tag">Kamera Langsung</span>
+        </div>
+        <div id="global-alert" class="alert" hidden role="alert"></div>
+        <div id="p2h-view">
+          <div class="stepper" aria-label="Tahapan P2H"><span class="current" data-step="1"><i>1</i> Form & Foto</span><span data-step="2"><i>2</i> Review</span><span data-step="3"><i>3</i> Tanda Tangan</span></div>
+          <div id="p2h-step-1">
+            <div class="section-title"><div><span>01</span><b>Identitas Kendaraan</b></div><small>* Wajib diisi</small></div>
+            <div class="fields-grid">
+              <label>Nama Petugas / Pembuat *<input id="p-person" maxlength="80" placeholder="Nama driver / unit control"></label>
+              <label>Peran Pembuat *<select id="p-role"><option value="Driver">Driver</option><option value="Unit Control">Unit Control</option></select></label>
+              <label>Truck *<input id="p-truck" maxlength="50" placeholder="Contoh: Hino 500"></label>
+              <label>Container *<input id="p-container" maxlength="50" placeholder="Nomor container"></label>
+              <label>No. Polisi *<input id="p-plate" maxlength="24" placeholder="Contoh: B 9018 TEK"></label>
+              <label>Kilometer *<input id="p-km" maxlength="24" placeholder="Contoh: 123456"></label>
+              <label>Tanggal Pemeriksaan *<input id="p-date" type="date"></label>
+              <label>Jam Pemeriksaan *<input id="p-time" type="time"></label>
+            </div>
+            <div class="section-title checklist-heading"><div><span>02</span><b>Checklist & Evidence</b></div><small>Semua item OK/NOK • Foto A–H wajib</small></div>
+            <div class="notice"><span>📷</span><div><b>Kebijakan Foto</b><p>Area A–H wajib difoto meski hasil OK. Item lain wajib foto jika NOK. Tidak ada fitur unggah dari galeri.</p></div></div>
+            <div id="p2h-checklist"></div>
+            <div class="section-title"><div><span>03</span><b>Catatan Tambahan</b></div></div>
+            <textarea id="p-notes" rows="3" maxlength="300" placeholder="Catatan / keluhan tambahan (opsional)"></textarea>
+            <div class="actions"><button type="button" class="btn btn-ghost" id="new-p2h">Form Baru</button><button type="button" class="btn btn-primary" id="go-review">Next: Review →</button></div>
+          </div>
+          <div id="p2h-step-2" hidden>
+            <div class="section-title"><div><span>02</span><b>Review Hasil Pemeriksaan</b></div></div>
+            <div class="notice"><span>✓</span><div><b>Pastikan sebelum tanda tangan</b><p>Periksa identitas, semua hasil OK/NOK, keterangan NOK dan seluruh bukti foto yang sudah diambil.</p></div></div>
+            <div id="review-p2h"></div>
+            <div class="actions"><button type="button" class="btn btn-ghost" id="back-form">← Edit Form</button><button type="button" class="btn btn-primary" id="go-sign">Next: Tanda Tangan →</button></div>
+          </div>
+          <div id="p2h-step-3" hidden>
+            <div class="section-title"><div><span>03</span><b>Tanda Tangan Pembuat</b></div></div>
+            <div class="notice"><span>✍</span><div><b>Tanda tangan pembuat form</b><p>Gunakan jari atau mouse. TTD ditempatkan pada slot Driver/Unit Control sesuai peran di halaman 1 PDF asli.</p></div></div>
+            <label class="sign-label">Tanda tangan: <b id="sign-name"></b></label>
+            <div class="signature-frame"><canvas id="signature" width="880" height="230" aria-label="Tanda tangan pembuat"></canvas></div>
+            <div class="signature-tools"><button type="button" class="btn btn-ghost btn-small" id="clear-sign">Hapus Tanda Tangan</button><small>Harus digambar sebelum PDF dibuat.</small></div>
+            <div class="actions"><button type="button" class="btn btn-ghost" id="back-review">← Kembali Review</button><button type="button" class="btn btn-primary" id="submit-p2h">Generate PDF & Simpan</button></div>
+          </div>
+        </div>
+        <div id="clean-view" hidden>
+          <div class="section-title"><div><span>01</span><b>Identitas & Jenis Pembersihan</b></div></div>
+          <div class="fields-grid">
+            <label>Nama Driver *<input id="c-driver" maxlength="80" placeholder="Nama driver"></label>
+            <label>Nomor Polisi *<input id="c-plate" maxlength="24" placeholder="Nomor polisi kendaraan"></label>
+            <label>Jenis Pembersihan *<select id="c-type"><option value="Harian (Sapu + Fakum)">Harian (Sapu + Fakum)</option><option value="Mingguan (Lap Basah + Fakum)">Mingguan (Lap Basah + Fakum)</option></select></label>
+            <label>Tanggal Kegiatan *<input id="c-date" type="date"></label>
+          </div>
+          <div class="section-title"><div><span>02</span><b>Foto Bukti Kebersihan</b></div><small>4 foto kamera langsung wajib</small></div>
+          <div class="notice"><span>📷</span><div><b>Urutan dokumentasi</b><p>Ambil foto <strong>Sterico Trap SEBELUM</strong> sebelum memulai pembersihan, lalu foto hasil dalam/luar kontainer, dan terakhir <strong>Sterico Trap SESUDAH</strong>. Seluruh foto berasal dari kamera langsung.</p></div></div>
+          <div class="photo-grid" id="clean-photogrid"></div>
+          <div class="actions"><button type="button" class="btn btn-ghost" id="new-clean">Form Baru</button><button type="button" class="btn btn-primary" id="submit-clean">Generate PDF & Simpan →</button></div>
+        </div>
+        <div id="history-view" hidden>
+          <div class="section-title"><div><span>▤</span><b>Arsip Dokumen & Riwayat Pengisian</b></div><small>PDF tersimpan di Google Drive</small></div>
+          <div class="notice"><span>☁</span><div><b>Unduh ulang PDF yang sudah tersimpan</b><p>Riwayat menampilkan formulir P2H dan Kebersihan Truck yang aktif. Untuk menghapus, wajib melewati dua tahap konfirmasi. Penghapusan memindahkan folder ke Trash Drive dan mempertahankan jejak audit pada Sheets.</p></div></div>
+          <div class="history-tools"><label>Cari riwayat<input id="history-search" maxlength="100" placeholder="Nama pembuat, nomor polisi, tanggal, jenis form..."></label><button class="btn btn-primary" type="button" id="history-refresh">↻ Muat Riwayat</button></div>
+          <p class="history-status" id="history-status">Klik Muat Riwayat untuk mengambil arsip dari Google Sheets.</p>
+          <div class="history-paging"><button type="button" class="btn btn-ghost btn-small" id="history-prev" disabled>← Sebelumnya</button><span id="history-page-info">Halaman 1</span><button type="button" class="btn btn-ghost btn-small" id="history-next" disabled>Selanjutnya →</button></div>
+          <div class="history-scroll"><table class="review-table history-table"><thead><tr><th>Tanggal</th><th>Jenis</th><th>Pembuat</th><th>No. Polisi</th><th>Nama PDF</th><th>Aksi</th></tr></thead><tbody id="history-table-body"><tr><td colspan="6">Riwayat belum dimuat.</td></tr></tbody></table></div>
+        </div>
+        <div id="save-result" class="result" hidden>
+          <div class="result-symbol">✓</div><h2 id="result-title">Tersimpan</h2><p id="result-message"></p><div id="result-links" class="result-links"></div>
+          <button class="btn btn-primary" type="button" id="result-new">Buat Form Baru</button>
+        </div>
+      </section>
+    </section>
+    <footer class="footer">FleetCheck • GitHub Pages (UI) · Google Apps Script (API) · Google Sheets & Drive (Storage)</footer>
+  </main>
+  <div id="camera-modal" class="camera-modal" hidden role="dialog" aria-modal="true" aria-label="Ambil foto langsung dari kamera">
+    <div class="camera-panel"><div class="camera-top"><div><b>Kamera Langsung</b><small id="camera-label">Evidence</small></div><button type="button" id="camera-close" aria-label="Tutup kamera">✕</button></div>
+      <div class="camera-display"><video id="camera-video" autoplay playsinline muted></video><div class="camera-overlay"><span class="camera-live">● LIVE CAMERA</span><span id="camera-meta"></span></div></div>
+      <div class="camera-foot"><small>Pastikan objek terlihat jelas. Tidak ada opsi memilih foto dari galeri.</small><button type="button" class="btn btn-primary" id="camera-capture">📷 Ambil Foto</button></div>
+    </div>
+  </div>
+  <div id="delete-modal" class="camera-modal" hidden role="dialog" aria-modal="true" aria-labelledby="delete-title">
+    <div class="delete-panel">
+      <h3 id="delete-title">Verifikasi Akhir Penghapusan</h3>
+      <p id="delete-desc"></p>
+      <p>Ketikan <b>HAPUS</b> serta isi nama pelaksana. File PDF dan foto dipindahkan ke <b>Trash Google Drive</b>, dan catatan audit tetap ada.</p>
+      <label class="field-label">Nama pelaksana penghapusan<input id="delete-actor" maxlength="80" placeholder="Nama Anda"></label>
+      <label class="field-label">Ketik HAPUS<input id="delete-phrase" autocomplete="off" spellcheck="false" placeholder="HAPUS"></label>
+      <div class="actions"><button class="btn btn-ghost" id="delete-cancel" type="button">Batalkan</button><button class="btn btn-danger" id="delete-confirm" type="button" disabled>Konfirmasi Hapus</button></div>
+    </div>
+  </div>
+  <iframe id="backend-frame" title="Respons penyimpanan" name="fleetcheck-backend-frame" hidden></iframe>
+  <div id="toast" role="status" class="toast"></div>
+</body>
+</html>
