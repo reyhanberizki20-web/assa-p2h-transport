@@ -1,5 +1,5 @@
 'use strict';
-/* FleetCheck R3.2 PDF layouts. Requires PDFLib 1.17.1 (loaded in index.html).
+/* FleetCheck R3.3.1 PDF layouts. Requires PDFLib 1.17.1 (loaded in index.html).
  * The MASTER P2H body/layout remains the original exported Excel sheet. Only
  * the top document header is restyled; the original ASSA logo image is embedded.
  * Extra evidence pages: four images per page, 2 columns x 2 rows.
@@ -92,6 +92,14 @@ window.FleetPdf = (() => {
     write(data.inspection_time,508,97.127,55,7.5,6);
     for(const item of window.MASTER_P2H.items){
       const check=data.checks[item.row],y=H-item.baselineTop;
+      if(item.row===20){
+        // Master P2H item 09: replace only the dotted placeholder, not its label,
+        // parentheses, grid or other content. Coordinates from original PDF text.
+        const dateText=data.apar_expiry_date?dateLabel(data.apar_expiry_date):'-';
+        page.drawRectangle({x:98.6,y:y-1.7,width:34.8,height:7.4,color:white});
+        const size=fontFit(dateText,font,33.5,6,4.5),tw=font.widthOfTextAtSize(dateText,size);
+        page.drawText(dateText,{x:98.6+(34.8-tw)/2,y,font,size,color:navy});
+      }
       page.drawText(check.status==='ok'?'v':'x',{x:402,y,font:bold,size:7,color:navy});
       if(check.note){
         let t=short(check.note,72),s=fontFit(t,font,122,5.6,3.4);
@@ -109,15 +117,19 @@ window.FleetPdf = (() => {
     const driverSide=['DRIVER','CO-DRIVER'].includes(role.toUpperCase());
     const slots=driverSide?[{x:716,top:80,w:88,h:38},{x:590,top:501,w:78,h:42}]:[{x:618,top:80,w:87,h:38},{x:485,top:501,w:78,h:42}];
     for(const pos of slots){const size=fitImage(sig,pos.w,pos.h);page.drawImage(sig,{x:pos.x+(pos.w-size.width)/2,y:H-pos.top-pos.h+(pos.h-size.height)/2,width:size.width,height:size.height});}
-    // Avoid mislabeling CO-DRIVER / DISPATCHER / an Others role as Driver / Unit Control.
-    // Redraw only the two label areas, preserving all other source-template content.
-    const upper=driverSide?{x:716,top:117,w:84,h:17}:{x:615,top:117,w:81,h:17};
-    const lower=driverSide?{x:585,top:545,w:85,h:17}:{x:481,top:545,w:83,h:17};
-    for(const box of [upper,lower]){
+    // R3.3.1: both original Driver labels are blank, independent of the selected role.
+    // Keep the existing signature placement and non-driver (left-column) behavior.
+    const rightLabels=[{x:716,top:117,w:84,h:17},{x:585,top:545,w:85,h:17}];
+    const leftLabels=[{x:615,top:117,w:81,h:17},{x:481,top:545,w:83,h:17}];
+    const drawSignatureLabel=(box,label)=>{
       page.drawRectangle({x:box.x,y:H-box.top-box.h,width:box.w,height:box.h,color:white});
-      const label=`( ${role} )`,labelSize=fontFit(label,font,box.w-4,7.5,4.1);
+      const labelSize=fontFit(label,font,box.w-4,7.5,4.1);
       const tw=font.widthOfTextAtSize(label,labelSize);
       page.drawText(label,{x:box.x+(box.w-tw)/2,y:H-box.top-11.5,font,size:labelSize,color:navy});
+    };
+    for(const box of rightLabels)drawSignatureLabel(box,'(                           )');
+    if(!driverSide){
+      for(const box of leftLabels)drawSignatureLabel(box,`( ${role} )`);
     }
     const evidence=window.MASTER_P2H.items.filter(item=>photos[item.row]).map(item=>({item,photo:photos[item.row],status:data.checks[item.row].status,note:data.checks[item.row].note}));
     const margin=27,gap=12,cardW=(W-margin*2-gap)/2,cardH=220;
