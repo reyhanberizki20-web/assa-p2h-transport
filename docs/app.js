@@ -1,15 +1,16 @@
 'use strict';
-/* FleetCheck R3.2. GitHub Pages owns camera capture & PDF creation.
+/* FleetCheck R3.3. GitHub Pages owns camera capture & PDF creation.
    Apps Script receives a normal HTML FORM POST (rather than cross-origin fetch),
    then confirms completion with a target-origin-checked postMessage response. */
 const $ = (id) => document.getElementById(id);
 const ITEMS = window.MASTER_P2H.items;
 const MASTER = window.FLEETCHECK_MASTER;
 const OTHER = '__other__';
+const APAR_ROW = 20; // Item 09 in the original Master P2H.
 /* Keep dropdown master values separate from optional, manually typed values. */
 function selectedMasterValue(id) {
  const result = value(id) === OTHER ? value(id+'-other') : value(id);
- return id==='c-plate' ? result.toUpperCase().replace(/\s+/g,' ').trim() : result;
+ return ['c-plate','p-plate'].includes(id) ? result.toUpperCase().replace(/\s+/g,' ').trim() : result;
 }
 function syncOtherInput(id) {
  const isOther = value(id)===OTHER;
@@ -28,7 +29,8 @@ function initReferenceDropdowns() {
   'p-person': MASTER.personRoles.map(p=>p.name),
   'c-driver': MASTER.personRoles.map(p=>p.name),
   'p-role': MASTER.roles,
-  'c-plate': MASTER.plates
+  'c-plate': MASTER.plates,
+  'p-plate': MASTER.plates
  };
  for(const [id, entries] of Object.entries(groups)) {
   const select=$(id);
@@ -45,8 +47,8 @@ function initReferenceDropdowns() {
   $('p-role').value=chosen?.role||'';
   syncOtherInput('p-role');
  });
- $('c-plate-other').addEventListener('blur',()=>{
-  $('c-plate-other').value=$('c-plate-other').value.toUpperCase().replace(/\s+/g,' ').trim();
+ for(const id of ['c-plate-other','p-plate-other'])$(id).addEventListener('blur',()=>{
+  $(id).value=$(id).value.toUpperCase().replace(/\s+/g,' ').trim();
  });
 }
 
@@ -68,14 +70,15 @@ function setView(which){
  if(state.active)return;closeCamera();state.view=which;clearError();
  $('save-result').hidden=true;$('p2h-view').hidden=which!=='p2h';
  $('clean-view').hidden=which!=='clean';$('history-view').hidden=which!=='history';
+ for(const el of document.querySelectorAll('[data-storage-access]'))el.hidden=which==='history';
  for(const b of document.querySelectorAll('.nav'))b.classList.toggle('active',b.dataset.view===which);
  const cfg={p2h:['Pemeriksaan P2H','FORM INSPEKSI','Pemeriksaan kelayakan & perlengkapan container dan truck vendor.'],clean:['Kebersihan Truck','FORM KEBERSIHAN','Empat evidence kamera langsung termasuk Sterico Trap sebelum dan sesudah.'],history:['Riwayat Form','ARSIP DIGITAL','Cari hasil pengisian, unduh ulang PDF atau hapus dengan double verification.']}[which];
  $('page-title').textContent=cfg[0];$('page-eyebrow').textContent=cfg[1];$('page-subtitle').textContent=cfg[2];
  if(which==='history')loadHistory();window.scrollTo({top:0,behavior:'smooth'});
 }
 function setStep(n){state.step=n;for(let i=1;i<=3;i++){$(`p2h-step-${i}`).hidden=i!==n;}for(const s of document.querySelectorAll('.stepper [data-step]')){const sn=Number(s.dataset.step);s.classList.toggle('current',sn===n);s.classList.toggle('done',sn<n);}if(n===3)$('sign-name').textContent=selectedMasterValue('p-person')+' • '+selectedMasterValue('p-role');clearError();window.scrollTo({top:0,behavior:'smooth'});}
-function renderChecklist(){const frag=[];let prev='';for(let idx=0;idx<ITEMS.length;idx++){const item=ITEMS[idx];if(item.section!==prev){prev=item.section;frag.push(`<div class="check-section">${safe(item.section)}</div>`);}const req=item.point?`<span class="check-tag">Titik ${item.point} • Foto Wajib</span>`:'';frag.push(`<div class="check-row" data-row="${item.row}"><div class="check-row-top"><span class="check-num">${String(idx+1).padStart(2,'0')}</span><div class="check-name">${safe(item.label)}</div>${req}</div><div class="check-controls" role="group" aria-label="Status ${safe(item.label)}"><label class="radio-label"><input type="radio" name="st-${item.row}" value="ok">OK</label><label class="radio-label nok"><input type="radio" name="st-${item.row}" value="nok">NOK</label></div><input class="check-note" data-note="${item.row}" maxlength="72" placeholder="Keterangan NOK wajib diisi" hidden><div class="photo-row"><button type="button" class="btn-photo" data-photo="${item.row}">📷 Ambil Foto</button><span class="photo-status" data-photo-status="${item.row}">${item.point?'Foto wajib': 'Wajib jika NOK / opsional jika OK'}</span><img class="photo-thumb" data-thumb="${item.row}" hidden alt="Pratinjau foto evidence"></div></div>`);} $('p2h-checklist').innerHTML=frag.join('');
-  for(const el of document.querySelectorAll('.check-row')) {const row=Number(el.dataset.row);el.querySelectorAll('input[type=radio]').forEach(inp=>inp.addEventListener('change',()=>{const nok=el.querySelector('input[value=nok]').checked;el.classList.toggle('is-nok',nok);el.querySelector('.check-note').hidden=!nok;updatePhotoRow(row);}));}
+function renderChecklist(){const frag=[];let prev='';for(let idx=0;idx<ITEMS.length;idx++){const item=ITEMS[idx];if(item.section!==prev){prev=item.section;frag.push(`<div class="check-section">${safe(item.section)}</div>`);}const req=item.point?`<span class="check-tag">Titik ${item.point} • Foto Wajib</span>`:'';frag.push(`<div class="check-row" data-row="${item.row}"><div class="check-row-top"><span class="check-num">${String(idx+1).padStart(2,'0')}</span><div class="check-name">${safe(item.row===APAR_ROW?'Alat Pemadam Api (APAR)':item.label)}</div>${req}</div>${item.row===APAR_ROW?`<div class="apar-date-field fields-grid"><label for="p-apar-expiry">Expired Date (APAR)<input id="p-apar-expiry" type="date" aria-describedby="apar-date-help"><small id="apar-date-help">Wajib jika OK. Jika NOK dan tanggal tidak diketahui, isi keterangan.</small></label></div>`:''}<div class="check-controls" role="group" aria-label="Status ${safe(item.label)}"><label class="radio-label"><input type="radio" name="st-${item.row}" value="ok">OK</label><label class="radio-label nok"><input type="radio" name="st-${item.row}" value="nok">NOK</label></div><input class="check-note" data-note="${item.row}" maxlength="72" placeholder="Keterangan NOK wajib diisi" hidden><div class="photo-row"><button type="button" class="btn-photo" data-photo="${item.row}">📷 Ambil Foto</button><span class="photo-status" data-photo-status="${item.row}">${item.point?'Foto wajib': 'Wajib jika NOK / opsional jika OK'}</span><img class="photo-thumb" data-thumb="${item.row}" hidden alt="Pratinjau foto evidence"></div></div>`);} $('p2h-checklist').innerHTML=frag.join('');
+  for(const el of document.querySelectorAll('.check-row')) {const row=Number(el.dataset.row);el.querySelectorAll('input[type=radio]').forEach(inp=>inp.addEventListener('change',()=>{const nok=el.querySelector('input[value=nok]').checked;el.classList.toggle('is-nok',nok);el.querySelector('.check-note').hidden=!nok;if(row===APAR_ROW)$('p-apar-expiry').required=!nok;updatePhotoRow(row);}));}
   for(const btn of document.querySelectorAll('[data-photo]'))btn.addEventListener('click',()=>{const item=ITEMS.find(i=>i.row===Number(btn.dataset.photo));openCamera('p2h',item.row,item.label);});
 }
 function updatePhotoRow(row){const image=state.pPhotos[row],item=ITEMS.find(i=>i.row===row),nok=document.querySelector(`input[name="st-${row}"][value="nok"]`).checked;const txt=document.querySelector(`[data-photo-status="${row}"]`),thumb=document.querySelector(`[data-thumb="${row}"]`),button=document.querySelector(`[data-photo="${row}"]`);if(image){thumb.src=image.dataUrl;thumb.hidden=false;txt.textContent=`✓ Foto ${image.capturedAt}`;txt.style.color='#047857';button.textContent='↻ Ulangi Foto';} else{thumb.hidden=true;txt.textContent=item.point?'Foto wajib':(nok?'Foto wajib karena NOK':'Foto opsional');txt.style.color='';button.textContent='📷 Ambil Foto';}}
@@ -90,18 +93,19 @@ function renderClean(){
  }).join('');
  for(const btn of document.querySelectorAll('[data-clean-photo]'))btn.onclick=()=>openCamera('clean',btn.dataset.cleanPhoto,btn.closest('.photo-card').querySelector('b').textContent);
 }
-function gatherP2H(){const d={person_name:selectedMasterValue('p-person'),role:selectedMasterValue('p-role'),truck:value('p-truck'),container:value('p-container'),plate:value('p-plate'),kilometer:value('p-km'),inspection_date:value('p-date'),inspection_time:value('p-time'),additional_notes:value('p-notes'),checks:{}};for(const item of ITEMS){const status=document.querySelector(`input[name="st-${item.row}"]:checked`)?.value||'';d.checks[item.row]={status,note:document.querySelector(`[data-note="${item.row}"]`).value.trim()};}return d;}
-function validateP2H(d){for(const [field,label] of [['person_name','Nama pembuat'],['role','Peran pembuat'],['truck','Truck'],['container','Container'],['plate','Nomor polisi'],['kilometer','Kilometer'],['inspection_date','Tanggal'],['inspection_time','Jam']])if(!d[field])throw new Error(label+' wajib diisi.');for(const item of ITEMS){const s=d.checks[item.row];if(!['ok','nok'].includes(s.status))throw new Error('Checklist belum diisi: '+item.label);if(s.status==='nok'&&!s.note)throw new Error('Keterangan NOK wajib: '+item.label);if((item.point||s.status==='nok')&&!state.pPhotos[item.row])throw new Error('Foto evidence wajib: '+item.label);}return true;}
+function gatherP2H(){const d={person_name:selectedMasterValue('p-person'),role:selectedMasterValue('p-role'),truck:value('p-truck'),container:value('p-container'),plate:selectedMasterValue('p-plate'),apar_expiry_date:value('p-apar-expiry'),kilometer:value('p-km'),inspection_date:value('p-date'),inspection_time:value('p-time'),additional_notes:value('p-notes'),checks:{}};for(const item of ITEMS){const status=document.querySelector(`input[name="st-${item.row}"]:checked`)?.value||'';d.checks[item.row]={status,note:document.querySelector(`[data-note="${item.row}"]`).value.trim()};}d.checks[APAR_ROW].expiry_date=d.apar_expiry_date;return d;}
+function validCalendarDate(s){if(!/^\d{4}-\d{2}-\d{2}$/.test(s))return false;const d=new Date(s+'T00:00:00Z');return Number.isFinite(d.getTime())&&d.toISOString().slice(0,10)===s;}
+function validateP2H(d){for(const [field,label] of [['person_name','Nama pembuat'],['role','Peran pembuat'],['truck','Truck'],['container','Container'],['plate','Nomor polisi'],['kilometer','Kilometer'],['inspection_date','Tanggal'],['inspection_time','Jam']])if(!d[field])throw new Error(label+' wajib diisi.');for(const item of ITEMS){const s=d.checks[item.row];if(!['ok','nok'].includes(s.status))throw new Error('Checklist belum diisi: '+item.label);if(item.row===APAR_ROW){if(s.status==='ok'&&!d.apar_expiry_date)throw new Error('Expired Date APAR wajib diisi jika hasil OK.');if(d.apar_expiry_date&&!validCalendarDate(d.apar_expiry_date))throw new Error('Expired Date APAR tidak valid.');}if(s.status==='nok'&&!s.note)throw new Error('Keterangan NOK wajib: '+item.label);if((item.point||s.status==='nok')&&!state.pPhotos[item.row])throw new Error('Foto evidence wajib: '+item.label);}return true;}
 function validateClean(){
  if(!selectedMasterValue('c-driver') || !selectedMasterValue('c-plate') || !value('c-date'))throw new Error('Isi nama driver, nomor polisi, dan tanggal. Pilihan Others harus diisi manual.');
  for(const a of window.FleetPdf.cleanAreas)if(!state.cPhotos[a.key])throw new Error('Foto wajib: '+a.title+'. Buka kamera langsung.');
 }
-function reviewP2H(){const d=gatherP2H();validateP2H(d);const fields=[['Pembuat',d.person_name],['Peran',d.role],['No. Polisi',d.plate],['Truck',d.truck],['Container',d.container],['Kilometer',d.kilometer],['Tanggal / Jam',`${d.inspection_date} • ${d.inspection_time}`],['Foto Evidence',`${Object.keys(state.pPhotos).length} foto`]];const rows=ITEMS.map((item,i)=>{const s=d.checks[item.row],has=!!state.pPhotos[item.row];return `<tr><td>${i+1}</td><td>${safe(item.label)}${s.note?`<small style="display:block;color:#64748b">${safe(s.note)}</small>`:''}</td><td><span class="pill ${s.status}">${s.status.toUpperCase()}</span></td><td>${has?'📷 Ya':'—'}</td></tr>`;}).join('');const photosPreview=ITEMS.filter(item=>state.pPhotos[item.row]).map(item=>{const p=state.pPhotos[item.row];return `<div class="review-photo"><img src="${p.dataUrl}" alt="Foto ${safe(item.label)}"><div><b>${safe(item.point?'Titik '+item.point:item.label)}</b><small>${safe(p.capturedAt)} • ${safe(d.checks[item.row].status.toUpperCase())}</small></div></div>`;}).join('');$('review-p2h').innerHTML=`<div class="review-meta">${fields.map(([a,b])=>`<div class="review-field"><small>${a}</small><b>${safe(b)}</b></div>`).join('')}</div><div style="overflow-x:auto"><table class="review-table"><thead><tr><th>No.</th><th>Pemeriksaan</th><th>Status</th><th>Foto</th></tr></thead><tbody>${rows}</tbody></table></div><div class="section-title"><div><span>📷</span><b>Review Foto Evidence (${Object.keys(state.pPhotos).length})</b></div></div><div class="review-gallery">${photosPreview}</div>${d.additional_notes?`<div class="notice"><span>📝</span><div><b>Catatan</b><p>${safe(d.additional_notes)}</p></div></div>`:''}`;setStep(2);}
+function reviewP2H(){const d=gatherP2H();validateP2H(d);const fields=[['Pembuat',d.person_name],['Peran',d.role],['No. Polisi',d.plate],['Truck',d.truck],['Container',d.container],['Kilometer',d.kilometer],['Tanggal / Jam',`${d.inspection_date} • ${d.inspection_time}`],['Foto Evidence',`${Object.keys(state.pPhotos).length} foto`]];const rows=ITEMS.map((item,i)=>{const s=d.checks[item.row],has=!!state.pPhotos[item.row];return `<tr><td>${i+1}</td><td>${safe(item.row===APAR_ROW?'Alat Pemadam Api (APAR)':item.label)}${item.row===APAR_ROW?`<small style="display:block;color:#334155">Expired Date: ${safe(d.apar_expiry_date?d.apar_expiry_date.split('-').reverse().join('/'):'Tidak diketahui')}</small>`:''}${s.note?`<small style="display:block;color:#64748b">${safe(s.note)}</small>`:''}</td><td><span class="pill ${s.status}">${s.status.toUpperCase()}</span></td><td>${has?'📷 Ya':'—'}</td></tr>`;}).join('');const photosPreview=ITEMS.filter(item=>state.pPhotos[item.row]).map(item=>{const p=state.pPhotos[item.row];return `<div class="review-photo"><img src="${p.dataUrl}" alt="Foto ${safe(item.label)}"><div><b>${safe(item.point?'Titik '+item.point:item.label)}</b><small>${safe(p.capturedAt)} • ${safe(d.checks[item.row].status.toUpperCase())}</small></div></div>`;}).join('');$('review-p2h').innerHTML=`<div class="review-meta">${fields.map(([a,b])=>`<div class="review-field"><small>${a}</small><b>${safe(b)}</b></div>`).join('')}</div><div style="overflow-x:auto"><table class="review-table"><thead><tr><th>No.</th><th>Pemeriksaan</th><th>Status</th><th>Foto</th></tr></thead><tbody>${rows}</tbody></table></div><div class="section-title"><div><span>📷</span><b>Review Foto Evidence (${Object.keys(state.pPhotos).length})</b></div></div><div class="review-gallery">${photosPreview}</div>${d.additional_notes?`<div class="notice"><span>📝</span><div><b>Catatan</b><p>${safe(d.additional_notes)}</p></div></div>`:''}`;setStep(2);}
 function resetP2H(){
  if(state.active)return;
  state.pPhotos={};state.pId=null;state.lastPdf=null;
- for(const id of ['p-person','p-role']){$(id).value='';syncOtherInput(id);}
- for(const id of ['p-truck','p-container','p-plate','p-km','p-notes'])$(id).value='';
+ for(const id of ['p-person','p-role','p-plate']){$(id).value='';syncOtherInput(id);}
+ for(const id of ['p-truck','p-container','p-km','p-notes'])$(id).value='';
  $('p-date').value=dateStr();$('p-time').value=timeStr();
  renderChecklist();clearSignature();setStep(1);$('save-result').hidden=true;$('p2h-view').hidden=false;
 }
@@ -129,7 +133,7 @@ async function openCamera(kind,key,label){
  closeCamera();state.camera={kind,key,label};$('camera-label').textContent=label;$('camera-meta').textContent='';$('camera-modal').hidden=false;try{if(!navigator.mediaDevices?.getUserMedia)throw new Error('Browser tidak mendukung kamera langsung. Buka melalui HTTPS (GitHub Pages) atau localhost.');state.stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:960}}});$('camera-video').srcObject=state.stream;await $('camera-video').play();}catch(err){closeCamera();alertError('Kamera tidak bisa dibuka: '+(err.message||err.name)+'. Izinkan akses kamera dan gunakan HTTPS.');}}
 function closeCamera(){if(state.stream){for(const t of state.stream.getTracks())t.stop();state.stream=null;}$('camera-video').srcObject=null;$('camera-modal').hidden=true;state.camera=null;}
 function captureCamera(){const c=state.camera,v=$('camera-video');if(!c||!v.videoWidth)throw new Error('Kamera belum siap.');const ratio=Math.min(1,1280/v.videoWidth,960/v.videoHeight);const w=Math.round(v.videoWidth*ratio),h=Math.round(v.videoHeight*ratio);const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;const ctx=canvas.getContext('2d');ctx.drawImage(v,0,0,w,h);
-  const d=new Date();const ts=d.toLocaleString('id-ID',{hour12:false});const plate=(c.kind==='p2h'?value('p-plate'):selectedMasterValue('c-plate')).toUpperCase().slice(0,28);ctx.fillStyle='rgba(10,17,34,0.80)';ctx.fillRect(0,h-39,w,39);ctx.fillStyle='#fff';ctx.font=`bold ${Math.max(12,Math.round(w/90))}px Arial`;ctx.fillText(`FleetCheck • ${plate||'KENDARAAN'} • ${c.kind==='p2h'?'P2H '+(ITEMS.find(i=>i.row===c.key)?.point||c.key):String(c.label).slice(0,45)}`,12,h-23);ctx.font=`${Math.max(10,Math.round(w/110))}px Arial`;ctx.fillText(`Waktu perangkat: ${ts}`,12,h-8);
+  const d=new Date();const ts=d.toLocaleString('id-ID',{hour12:false});const plate=(c.kind==='p2h'?selectedMasterValue('p-plate'):selectedMasterValue('c-plate')).toUpperCase().slice(0,28);ctx.fillStyle='rgba(10,17,34,0.80)';ctx.fillRect(0,h-39,w,39);ctx.fillStyle='#fff';ctx.font=`bold ${Math.max(12,Math.round(w/90))}px Arial`;ctx.fillText(`FleetCheck • ${plate||'KENDARAAN'} • ${c.kind==='p2h'?'P2H '+(ITEMS.find(i=>i.row===c.key)?.point||c.key):String(c.label).slice(0,45)}`,12,h-23);ctx.font=`${Math.max(10,Math.round(w/110))}px Arial`;ctx.fillText(`Waktu perangkat: ${ts}`,12,h-8);
   let dataUrl=canvas.toDataURL('image/jpeg',.68);for(const quality of [.60,.52,.42]){if(dataUrl.length<590000)break;dataUrl=canvas.toDataURL('image/jpeg',quality);}if(dataUrl.length>650000)throw new Error('Foto terlalu besar untuk dikirim. Coba arahkan ulang kamera.');const item={dataUrl,capturedAt:ts,label:c.label};if(c.kind==='p2h'){state.pPhotos[c.key]=item;updatePhotoRow(Number(c.key));}else{state.cPhotos[c.key]=item;renderClean();}closeCamera();toast('Foto diambil langsung dari kamera.');}
 /* Signature canvas: transparent PNG and no upload. */
 const sigCanvas=$('signature'),sigCtx=sigCanvas.getContext('2d');sigCtx.lineCap='round';sigCtx.lineJoin='round';sigCtx.strokeStyle='#0f172a';sigCtx.lineWidth=3;
@@ -225,11 +229,9 @@ function renderHistory(){
 async function loadHistory(page=1){
  if(state.active)return;
  if(!backendReady()){$('history-status').textContent='Riwayat cloud tersedia setelah URL Apps Script dikonfigurasi.';state.historyRecords=[];renderHistory();return;}
- const code=value('access-code');
- if(!code){$('history-status').textContent='Isi kode akses petugas di panel kiri untuk membaca arsip.';state.historyRecords=[];renderHistory();return;}
  setBusy(true,'Mengambil Riwayat Form...');
  try{
-  const data=await postGAS({action:'listRecords',accessCode:code,page,search:value('history-search')});
+  const data=await postGAS({action:'listRecords',page,search:value('history-search')});
   state.historyRecords=data.records||[];state.historyPage=data.page||1;state.historyPages=data.pages||1;state.historyTotal=data.total||0;
   renderHistory();
   $('history-page-info').textContent=`Halaman ${state.historyPage} / ${state.historyPages}`;
@@ -242,7 +244,7 @@ async function downloadFromHistory(id){
  if(state.active)return;const row=state.historyRecords.find(r=>r.recordId===id);if(!row)return;
  setBusy(true,'Mengunduh PDF dari Google Drive...');
  try{
-  const data=await postGAS({action:'downloadPdf',recordId:id,accessCode:value('access-code'),actorName:row.person});
+  const data=await postGAS({action:'downloadPdf',recordId:id});
   const binary=atob(data.pdfBase64),bytes=new Uint8Array(binary.length);
   for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
   const a=downloadable(bytes,data.fileName||row.fileName);document.body.append(a);a.click();a.remove();toast('PDF arsip sudah diminta untuk diunduh.');
@@ -254,24 +256,24 @@ function openDeleteDialog(id){
  if(!window.confirm(`Tahap 1/2 — Anda yakin ingin menghapus dari riwayat?\n\n${row.type}\n${row.person} | ${row.date}\n${row.fileName}\n\nPDF dan foto akan dipindah ke Trash Google Drive, sementara audit tetap tersimpan.`))return;
  state.deletionTarget=row;
  $('delete-desc').textContent=`Dokumen: ${row.fileName} | ${row.plate} | ID ${row.recordId}`;
- $('delete-actor').value='';$('delete-phrase').value='';$('delete-confirm').disabled=true;$('delete-modal').hidden=false;$('delete-actor').focus();
+ $('delete-actor').value='';$('delete-phrase').value='';$('delete-access-code').value='';$('delete-error').hidden=true;$('delete-confirm').disabled=true;$('delete-modal').hidden=false;$('delete-actor').focus();
 }
-function closeDeleteDialog(){if(state.active)return;state.deletionTarget=null;$('delete-modal').hidden=true;}
+function closeDeleteDialog(){if(state.active)return;state.deletionTarget=null;$('delete-access-code').value='';$('delete-error').hidden=true;$('delete-modal').hidden=true;}
 function validateDeleteDialog(){
- $('delete-confirm').disabled=state.active || !$('delete-actor').value.trim() || $('delete-phrase').value.trim()!=='HAPUS';
+ $('delete-confirm').disabled=state.active || !$('delete-actor').value.trim() || !$('delete-access-code').value.trim() || $('delete-phrase').value.trim()!=='HAPUS';
 }
 async function confirmDeleteFromHistory(){
- const row=state.deletionTarget;if(!row||state.active||!value('delete-actor')||value('delete-phrase')!=='HAPUS')return;
- const actor=value('delete-actor');$('delete-modal').hidden=true;
+ const row=state.deletionTarget;if(!row||state.active||!value('delete-actor')||!value('delete-access-code')||value('delete-phrase')!=='HAPUS')return;
+ const actor=value('delete-actor'),code=value('delete-access-code');$('delete-error').hidden=true;
  setBusy(true,'Memindahkan dokumen ke Trash Google Drive...');
  try{
-  await postGAS({action:'deleteRecord',recordId:row.recordId,confirmRecordId:row.recordId,confirmText:'HAPUS',actorName:actor,accessCode:value('access-code')});
-  state.historyRecords=state.historyRecords.filter(x=>x.recordId!==row.recordId);state.deletionTarget=null;renderHistory();
+  await postGAS({action:'deleteRecord',recordId:row.recordId,confirmRecordId:row.recordId,confirmText:'HAPUS',actorName:actor,accessCode:code});
+  state.historyRecords=state.historyRecords.filter(x=>x.recordId!==row.recordId);state.deletionTarget=null;$('delete-modal').hidden=true;renderHistory();
   state.historyTotal=Math.max(0,state.historyTotal-1);
   $('history-status').textContent=`${state.historyTotal} laporan aktif. Dokumen ${row.recordId} dihapus dari arsip aktif (soft delete).`;
   toast('Dokumen dipindah ke Trash Drive. Audit tetap ada.');
- }catch(e){alertError('Gagal menghapus: '+e.message);}
- finally{setBusy(false);}
+ }catch(e){$('delete-error').textContent='Gagal menghapus: '+e.message;$('delete-error').hidden=false;}
+ finally{$('delete-access-code').value='';setBusy(false);}
 }
 function init(){
  initReferenceDropdowns();renderChecklist();renderClean();$('p-date').value=dateStr();$('p-time').value=timeStr();$('c-date').value=dateStr();
@@ -286,7 +288,7 @@ function init(){
  $('history-search').oninput=()=>{clearTimeout(state.searchTimer);state.searchTimer=setTimeout(()=>loadHistory(1),500);};
  $('history-refresh').onclick=()=>loadHistory(1);$('history-prev').onclick=()=>loadHistory(state.historyPage-1);$('history-next').onclick=()=>loadHistory(state.historyPage+1);
  $('delete-cancel').onclick=closeDeleteDialog;
- $('delete-actor').oninput=validateDeleteDialog;$('delete-phrase').oninput=validateDeleteDialog;
+ $('delete-actor').oninput=validateDeleteDialog;$('delete-access-code').oninput=validateDeleteDialog;$('delete-phrase').oninput=validateDeleteDialog;
  $('delete-confirm').onclick=confirmDeleteFromHistory;
  $('camera-close').onclick=closeCamera;
  $('camera-capture').onclick=()=>{try{captureCamera();}catch(e){alertError(e.message);}};
