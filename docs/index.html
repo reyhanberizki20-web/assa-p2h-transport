@@ -6,18 +6,18 @@
   <meta name="theme-color" content="#0f172a">
   <meta name="description" content="P2H dan kebersihan kendaraan: inspeksi, live camera evidence, tanda tangan dan PDF lampiran.">
   <title>FleetCheck • P2H & Kebersihan Truck</title>
-  <link rel="stylesheet" href="styles.css?v=3.3">
+  <link rel="stylesheet" href="styles.css?v=3.3.2">
   <script defer src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
   <script defer src="config.js"></script>
   <script defer src="master-map.js"></script>
   <script defer src="master-options.js"></script>
   <script defer src="pdf-reports.js?v=3.3.1"></script>
-  <script defer src="app.js?v=3.3"></script>
+  <script defer src="app.js?v=3.3.3"></script>
 </head>
 <body>
   <header class="topbar">
     <div class="brand"><span class="brand-mark">▦</span><div><b>FleetCheck</b><small>Vehicle Inspection System</small></div></div>
-    <div class="topbar-right"><span class="top-pill"><span class="pulse"></span> Live Camera Only</span><span class="version">R3.3 • Cloud</span></div>
+    <div class="topbar-right"><span class="top-pill"><span class="pulse"></span> Live Camera Only</span><span class="version">R3.3.3 • Cloud</span></div>
   </header>
   <main class="layout">
     <section class="hero" aria-label="Judul sistem">
@@ -29,11 +29,6 @@
         <button class="nav active" data-view="p2h" type="button"><span>☷</span><b>P2H Kendaraan</b></button>
         <button class="nav" data-view="clean" type="button"><span>▧</span><b>Kebersihan Truck</b></button>
         <button class="nav" data-view="history" type="button"><span>▤</span><b>Riwayat Form</b></button>
-        <div class="aside-separator" data-storage-access></div>
-        <div class="aside-label" data-storage-access>AKSES PENYIMPANAN</div>
-        <label class="small-label" for="access-code" data-storage-access>Kode akses petugas</label>
-        <input data-storage-access id="access-code" type="password" autocomplete="off" spellcheck="false" placeholder="Kode akses disediakan admin">
-        <small class="helper" data-storage-access>Tidak disimpan di browser. Diperlukan untuk menyimpan data ke Google Sheets & Drive.</small>
         <div class="aside-separator"></div>
         <div class="aside-info"><b>Dokumentasi</b><p>Foto hanya bisa diambil dengan kamera aktif. Galeri/file picker tidak tersedia.</p><p>PDF P2H: halaman 1 form dengan header baru, selanjutnya 4 foto per halaman. Kebersihan: 4 foto wajib.</p></div>
       </aside>
@@ -124,8 +119,9 @@
         </div>
         <div id="history-view" hidden>
           <div class="section-title"><div><span>▤</span><b>Arsip Dokumen & Riwayat Pengisian</b></div><small>PDF tersimpan di Google Drive</small></div>
-          <div class="notice"><span>☁</span><div><b>Unduh ulang PDF yang sudah tersimpan</b><p>Riwayat menampilkan formulir P2H dan Kebersihan Truck yang aktif. Lihat dan unduh PDF tanpa kode akses. Untuk menghapus, wajib memasukkan kode akses petugas dan melewati dua tahap konfirmasi. Penghapusan memindahkan folder ke Trash Drive dan mempertahankan jejak audit pada Sheets.</p></div></div>
+          <div class="notice"><span>☁</span><div><b>Unduh ulang PDF yang sudah tersimpan</b><p>Riwayat menampilkan formulir P2H dan Kebersihan Truck yang aktif. Lihat dan unduh PDF tanpa kode akses. Untuk menghapus, wajib memasukkan kode akses petugas dan melewati dua tahap konfirmasi. Penghapusan menghapus baris laporan dan evidence dari Google Sheets, memindahkan folder ke Trash Drive, serta mempertahankan jejak audit.</p></div></div>
           <div class="history-tools"><label>Cari riwayat<input id="history-search" maxlength="100" placeholder="Nama pembuat, nomor polisi, tanggal, jenis form..."></label><button class="btn btn-primary" type="button" id="history-refresh">↻ Muat Riwayat</button></div>
+          <div id="history-download-ready" hidden role="status" class="notice"><div><b>PDF dari Google Drive siap diunduh.</b><p>Tekan tombol di bawah untuk menyimpan PDF ke perangkat.</p><div id="history-download-link"></div></div></div>
           <p class="history-status" id="history-status">Klik Muat Riwayat untuk mengambil arsip dari Google Sheets.</p>
           <div class="history-paging"><button type="button" class="btn btn-ghost btn-small" id="history-prev" disabled>← Sebelumnya</button><span id="history-page-info">Halaman 1</span><button type="button" class="btn btn-ghost btn-small" id="history-next" disabled>Selanjutnya →</button></div>
           <div class="history-scroll"><table class="review-table history-table"><thead><tr><th>Tanggal</th><th>Jenis</th><th>Pembuat</th><th>No. Polisi</th><th>Nama PDF</th><th>Aksi</th></tr></thead><tbody id="history-table-body"><tr><td colspan="6">Riwayat belum dimuat.</td></tr></tbody></table></div>
@@ -148,9 +144,9 @@
     <div class="delete-panel">
       <h3 id="delete-title">Verifikasi Akhir Penghapusan</h3>
       <p id="delete-desc"></p>
-      <p>Ketik <b>HAPUS</b>, isi nama pelaksana dan masukkan kode akses petugas. File PDF dan foto dipindahkan ke <b>Trash Google Drive</b>, dan catatan audit tetap ada.</p>
+      <p>Ketik <b>HAPUS</b>, isi nama pelaksana dan masukkan kode akses petugas. Baris laporan dan evidence akan dihapus dari Google Sheets. File PDF dan foto dipindahkan ke <b>Trash Google Drive</b>. Catatan audit tetap ada.</p>
       <label class="field-label">Nama pelaksana penghapusan<input id="delete-actor" maxlength="80" placeholder="Nama Anda"></label>
-      <label class="field-label">Kode akses petugas<input id="delete-access-code" type="password" autocomplete="off" spellcheck="false" placeholder="Kode akses disediakan admin"></label>
+      <label class="field-label">Kode akses admin untuk hapus<input id="delete-access-code" type="password" autocomplete="off" spellcheck="false" placeholder="Kode akses disediakan admin"></label>
       <p id="delete-error" class="alert" hidden role="alert"></p>
       <label class="field-label">Ketik HAPUS<input id="delete-phrase" autocomplete="off" spellcheck="false" placeholder="HAPUS"></label>
       <div class="actions"><button class="btn btn-ghost" id="delete-cancel" type="button">Batalkan</button><button class="btn btn-danger" id="delete-confirm" type="button" disabled>Konfirmasi Hapus</button></div>

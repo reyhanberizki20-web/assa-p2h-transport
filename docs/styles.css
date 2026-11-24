@@ -45,5 +45,5 @@
 .apar-date-field{margin:11px 0 0 41px;grid-template-columns:minmax(0,1fr);max-width:350px}
 .apar-date-field input[type=date],.fields-grid input[type=date],.fields-grid input[type=time]{box-sizing:border-box;min-width:0;max-width:100%;min-height:43px}
 .apar-date-field small{font-size:11px;font-weight:500;color:var(--muted);line-height:1.4}
-[data-storage-access][hidden]{display:none!important}
+#history-download-link{margin-top:10px}#history-download-link a{display:inline-block;text-decoration:none;color:#4338ca;border:1px solid #c7d2fe;background:#fff}
 @media(max-width:660px){.apar-date-field{margin-left:36px;max-width:none}.apar-date-field small{font-size:11px}}
