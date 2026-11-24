@@ -1,5 +1,5 @@
 'use strict';
-/* FleetCheck R3 PDF layouts. Requires PDFLib 1.17.1 (loaded in index.html).
+/* FleetCheck R3.2 PDF layouts. Requires PDFLib 1.17.1 (loaded in index.html).
  * The MASTER P2H body/layout remains the original exported Excel sheet. Only
  * the top document header is restyled; the original ASSA logo image is embedded.
  * Extra evidence pages: four images per page, 2 columns x 2 rows.
@@ -85,7 +85,7 @@ window.FleetPdf = (() => {
       const str=short(v,300);if(!str)return;
       page.drawText(str,{x,y:H-top,font,size:fontFit(str,font,maxWidth,size,min),color:navy});
     };
-    write(data.person_name,86,87.08,276,8,5.5);write(data.truck,86,97.127,276,8,5.5);
+    write(`${data.person_name} (${data.role})`,86,87.08,276,8,5.5);write(data.truck,86,97.127,276,8,5.5);
     write(data.container,86,107.174,276,8,5.5);write(data.plate,86,117.22,276,8,5.5);
     write(data.kilometer,86,127.267,276,8,5.5);
     write(dateLabel(data.inspection_date),508,87.08,55,7.3,6);
@@ -103,8 +103,22 @@ window.FleetPdf = (() => {
       wrapped(data.additional_notes,font,8,310,9).forEach((line,i)=>page.drawText(line,{x:149,y:H-458-i*10.5,font,size:8,color:navy}));
     }
     const sig=await pdf.embedPng(dataBytes(signatureData));
-    const slots=data.role==='Driver'?[{x:716,top:80,w:88,h:38},{x:590,top:501,w:78,h:42}]:[{x:618,top:80,w:87,h:38},{x:485,top:501,w:78,h:42}];
+    const role=short(data.role,30).trim()||'PEMBUAT';
+    // Driver and co-driver sign in the driver column; dispatcher and custom
+    // roles use the Unit Control column, whose printed role label is replaced.
+    const driverSide=['DRIVER','CO-DRIVER'].includes(role.toUpperCase());
+    const slots=driverSide?[{x:716,top:80,w:88,h:38},{x:590,top:501,w:78,h:42}]:[{x:618,top:80,w:87,h:38},{x:485,top:501,w:78,h:42}];
     for(const pos of slots){const size=fitImage(sig,pos.w,pos.h);page.drawImage(sig,{x:pos.x+(pos.w-size.width)/2,y:H-pos.top-pos.h+(pos.h-size.height)/2,width:size.width,height:size.height});}
+    // Avoid mislabeling CO-DRIVER / DISPATCHER / an Others role as Driver / Unit Control.
+    // Redraw only the two label areas, preserving all other source-template content.
+    const upper=driverSide?{x:716,top:117,w:84,h:17}:{x:615,top:117,w:81,h:17};
+    const lower=driverSide?{x:585,top:545,w:85,h:17}:{x:481,top:545,w:83,h:17};
+    for(const box of [upper,lower]){
+      page.drawRectangle({x:box.x,y:H-box.top-box.h,width:box.w,height:box.h,color:white});
+      const label=`( ${role} )`,labelSize=fontFit(label,font,box.w-4,7.5,4.1);
+      const tw=font.widthOfTextAtSize(label,labelSize);
+      page.drawText(label,{x:box.x+(box.w-tw)/2,y:H-box.top-11.5,font,size:labelSize,color:navy});
+    }
     const evidence=window.MASTER_P2H.items.filter(item=>photos[item.row]).map(item=>({item,photo:photos[item.row],status:data.checks[item.row].status,note:data.checks[item.row].note}));
     const margin=27,gap=12,cardW=(W-margin*2-gap)/2,cardH=220;
     for(let start=0;start<evidence.length;start+=4){

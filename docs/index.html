@@ -10,23 +10,23 @@
   <script defer src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
   <script defer src="config.js"></script>
   <script defer src="master-map.js"></script>
+  <script defer src="master-options.js"></script>
   <script defer src="pdf-reports.js"></script>
   <script defer src="app.js"></script>
 </head>
 <body>
   <header class="topbar">
     <div class="brand"><span class="brand-mark">▦</span><div><b>FleetCheck</b><small>Vehicle Inspection System</small></div></div>
-    <div class="topbar-right"><span class="top-pill"><span class="pulse"></span> Live Camera Only</span><span class="version">R3 • Cloud</span></div>
+    <div class="topbar-right"><span class="top-pill"><span class="pulse"></span> Live Camera Only</span><span class="version">R3.2 • Cloud</span></div>
   </header>
   <main class="layout">
-    <section class="hero">
-      <div><span class="overline">DIGITAL VEHICLE CONTROL</span><h1>P2H & Kebersihan Truck</h1><p>Checklist kendaraan, bukti foto kamera langsung, dan dokumentasi yang tersimpan rapi.</p></div>
-      <div class="hero-stat"><span>26</span><small>Item Checklist P2H</small><div class="hero-stat-minor">8 foto wajib A–H</div></div>
+    <section class="hero" aria-label="Judul sistem">
+      <div><span class="overline">DIGITAL VEHICLE CONTROL</span><h1>P2H & Kebersihan Truck</h1></div>
     </section>
     <section class="workspace">
       <aside class="sidebar">
         <div class="aside-label">WORKSPACE</div>
-        <button class="nav active" data-view="p2h" type="button"><span>☷</span><b>P2H Kendaraan</b><em>26</em></button>
+        <button class="nav active" data-view="p2h" type="button"><span>☷</span><b>P2H Kendaraan</b></button>
         <button class="nav" data-view="clean" type="button"><span>▧</span><b>Kebersihan Truck</b></button>
         <button class="nav" data-view="history" type="button"><span>▤</span><b>Riwayat Form</b></button>
         <div class="aside-separator"></div>
@@ -48,8 +48,20 @@
           <div id="p2h-step-1">
             <div class="section-title"><div><span>01</span><b>Identitas Kendaraan</b></div><small>* Wajib diisi</small></div>
             <div class="fields-grid">
-              <label>Nama Petugas / Pembuat *<input id="p-person" maxlength="80" placeholder="Nama driver / unit control"></label>
-              <label>Peran Pembuat *<select id="p-role"><option value="Driver">Driver</option><option value="Unit Control">Unit Control</option></select></label>
+              <div class="select-other-field">
+                <label for="p-person">Nama Driver / Pembuat *</label>
+                <select id="p-person" aria-controls="p-person-other" required><option value="">-- Pilih nama pembuat --</option></select>
+                <label class="other-field" id="p-person-other-wrap" for="p-person-other" hidden>Nama lainnya *
+                  <input id="p-person-other" maxlength="80" placeholder="Ketik nama pembuat" autocomplete="off" disabled>
+                </label>
+              </div>
+              <div class="select-other-field">
+                <label for="p-role">Peran Pembuat *</label>
+                <select id="p-role" aria-controls="p-role-other" required><option value="">-- Pilih peran pembuat --</option></select>
+                <label class="other-field" id="p-role-other-wrap" for="p-role-other" hidden>Peran lainnya *
+                  <input id="p-role-other" maxlength="30" placeholder="Ketik peran pembuat" autocomplete="off" disabled>
+                </label>
+              </div>
               <label>Truck *<input id="p-truck" maxlength="50" placeholder="Contoh: Hino 500"></label>
               <label>Container *<input id="p-container" maxlength="50" placeholder="Nomor container"></label>
               <label>No. Polisi *<input id="p-plate" maxlength="24" placeholder="Contoh: B 9018 TEK"></label>
@@ -72,7 +84,7 @@
           </div>
           <div id="p2h-step-3" hidden>
             <div class="section-title"><div><span>03</span><b>Tanda Tangan Pembuat</b></div></div>
-            <div class="notice"><span>✍</span><div><b>Tanda tangan pembuat form</b><p>Gunakan jari atau mouse. TTD ditempatkan pada slot Driver/Unit Control sesuai peran di halaman 1 PDF asli.</p></div></div>
+            <div class="notice"><span>✍</span><div><b>Tanda tangan pembuat form</b><p>Gunakan jari atau mouse. TTD ditempatkan pada kolom pemeriksa yang sesuai; nama peran aktual tetap tercantum di PDF.</p></div></div>
             <label class="sign-label">Tanda tangan: <b id="sign-name"></b></label>
             <div class="signature-frame"><canvas id="signature" width="880" height="230" aria-label="Tanda tangan pembuat"></canvas></div>
             <div class="signature-tools"><button type="button" class="btn btn-ghost btn-small" id="clear-sign">Hapus Tanda Tangan</button><small>Harus digambar sebelum PDF dibuat.</small></div>
@@ -82,8 +94,20 @@
         <div id="clean-view" hidden>
           <div class="section-title"><div><span>01</span><b>Identitas & Jenis Pembersihan</b></div></div>
           <div class="fields-grid">
-            <label>Nama Driver *<input id="c-driver" maxlength="80" placeholder="Nama driver"></label>
-            <label>Nomor Polisi *<input id="c-plate" maxlength="24" placeholder="Nomor polisi kendaraan"></label>
+            <div class="select-other-field">
+              <label for="c-driver">Nama Driver *</label>
+              <select id="c-driver" aria-controls="c-driver-other" required><option value="">-- Pilih nama driver --</option></select>
+              <label class="other-field" id="c-driver-other-wrap" for="c-driver-other" hidden>Nama driver lainnya *
+                <input id="c-driver-other" maxlength="80" placeholder="Ketik nama driver" autocomplete="off" disabled>
+              </label>
+            </div>
+            <div class="select-other-field">
+              <label for="c-plate">Nomor Polisi *</label>
+              <select id="c-plate" aria-controls="c-plate-other" required><option value="">-- Pilih nomor kendaraan --</option></select>
+              <label class="other-field" id="c-plate-other-wrap" for="c-plate-other" hidden>Nomor polisi lainnya *
+                <input id="c-plate-other" maxlength="24" placeholder="Contoh: B 1234 ABC" autocomplete="off" disabled>
+              </label>
+            </div>
             <label>Jenis Pembersihan *<select id="c-type"><option value="Harian (Sapu + Fakum)">Harian (Sapu + Fakum)</option><option value="Mingguan (Lap Basah + Fakum)">Mingguan (Lap Basah + Fakum)</option></select></label>
             <label>Tanggal Kegiatan *<input id="c-date" type="date"></label>
           </div>
