@@ -2,5 +2,5 @@
  * DO NOT place the secret ACCESS_CODE here or commit it to GitHub.
  */
 window.FLEETCHECK_CONFIG = {
-  backendUrl: 'PASTE_GOOGLE_APPS_SCRIPT_EXEC_URL_HERE'
+  backendUrl: 'https://script.google.com/macros/s/AKfycbz2o-sarQPISO5Re7LwoHQrfmaRUtJBzPV0s0Qq1mxLjrHjXolqg2VZ6S2OfOqkh-ep/exec'
 };
