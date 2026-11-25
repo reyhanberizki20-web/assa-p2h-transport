@@ -155,7 +155,23 @@ async function makeCleanPdf(data,recordId){
  return window.FleetPdf.cleaning(data,state.cPhotos,recordId);
 }
 function bytesToDataURL(bytes,type){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(new Blob([bytes],{type}));});}
-function backendReady(){const url=window.FLEETCHECK_CONFIG?.backendUrl||'';return /^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec(?:\?.*)?$/.test(url);}
+// Only accept HTTPS Apps Script Web App endpoints on Google's actual host.
+// The copied URL can be scoped to a Workspace domain or account. Whitespace
+// and a trailing slash are harmless configuration typos, not a new endpoint.
+function getBackendUrl(){
+ const raw=window.FLEETCHECK_CONFIG?.backendUrl;
+ if(typeof raw!=='string'||!raw.trim()||raw.includes('PASTE_GOOGLE_APPS_SCRIPT_EXEC_URL_HERE'))return '';
+ try{
+  const url=new URL(raw.trim());
+  if(url.origin!=='https://script.google.com'||url.username||url.password||url.hash)return '';
+  const path=url.pathname.replace(/\/+$/,'');
+  const valid=/^\/(?:macros(?:\/u\/\d+)?|u\/\d+\/macros|a\/[a-z0-9.-]+\/macros|a\/macros\/[a-z0-9.-]+)\/s\/[A-Za-z0-9_-]+\/exec$/i.test(path);
+  if(!valid)return '';
+  url.pathname=path;
+  return url.href;
+ }catch(_){return '';}
+}
+function backendReady(){return !!getBackendUrl();}
 const API_VERSION='R3.3.3';
 function checkReply(data,txId){
  if(data?.type!=='FLEETCHECK_RESULT'||data.txId!==txId)throw new Error('Respons backend tidak sesuai request.');
@@ -164,7 +180,8 @@ function checkReply(data,txId){
  return data;
 }
 async function postGAS(payload){
- if(!backendReady())throw new Error('URL Google Apps Script /exec belum benar di config.js.');
+ const backendUrl=getBackendUrl();
+ if(!backendUrl)throw new Error('URL Google Apps Script /exec belum benar di config.js. Admin: salin Web app URL dari Deploy > Manage deployments, lalu perbarui docs/config.js di GitHub.');
  const txId=uid('TX'),request={...payload,txId,origin:location.origin},body=JSON.stringify(request);
  if(body.length>28000000)throw new Error('Ukuran data melebihi 28 MB. Kurangi ukuran evidence tanpa menghapus foto wajib.');
  // A simple text/plain request avoids a preflight. Apps Script ContentService
@@ -172,19 +189,19 @@ async function postGAS(payload){
  // policies reject the cross-origin response; fallback retains the same record ID.
  const controller=new AbortController();let timer=setTimeout(()=>controller.abort(),160000),response;
  try{
-  const res=await fetch(window.FLEETCHECK_CONFIG.backendUrl,{method:'POST',headers:{'Content-Type':'text/plain;charset=UTF-8'},body,redirect:'follow',credentials:'omit',signal:controller.signal});
+  const res=await fetch(backendUrl,{method:'POST',headers:{'Content-Type':'text/plain;charset=UTF-8'},body,redirect:'follow',credentials:'omit',signal:controller.signal});
   if(res.ok){try{response=await res.json();}catch(_){} }
  }catch(e){if(controller.signal.aborted)throw new Error('Server belum memberi konfirmasi. Cek Riwayat atau Executions, lalu coba ulang tanpa reset form (ID sama).');}
  finally{clearTimeout(timer);}
  if(response?.type==='FLEETCHECK_RESULT'&&response.txId===txId)return checkReply(response,txId);
- return postGASFrame(request,body,txId);
+ return postGASFrame(request,body,txId,backendUrl);
 }
-function postGASFrame(request,body,txId){return new Promise((resolve,reject)=>{
+function postGASFrame(request,body,txId,backendUrl){return new Promise((resolve,reject)=>{
  const frame=$('backend-frame');const originRegex=/^https:\/\/(?:[a-z0-9-]+\.)*googleusercontent\.com$|^https:\/\/script\.google\.com$/i;let timer;
  const finish=(err,data)=>{clearTimeout(timer);window.removeEventListener('message',onMessage);try{frame.src='about:blank';}catch(_){}if(err)reject(err);else resolve(data);};
  const onMessage=(e)=>{if(!originRegex.test(e.origin)||e.data?.type!=='FLEETCHECK_RESULT'||e.data.txId!==txId)return;try{finish(null,checkReply(e.data,txId));}catch(err){finish(err);}};
  window.addEventListener('message',onMessage);timer=setTimeout(()=>finish(new Error('Tidak menerima konfirmasi server. Periksa URL /exec, izin Web App, SITE_ORIGIN, dan Apps Script Executions. Cek Riwayat sebelum mencoba ulang.')),160000);
- const form=document.createElement('form');form.method='POST';form.action=window.FLEETCHECK_CONFIG.backendUrl;form.target=frame.name;form.enctype='application/x-www-form-urlencoded';form.style.display='none';const input=document.createElement('input');input.name='payload';input.value=body;form.appendChild(input);document.body.appendChild(form);try{form.submit();}catch(err){finish(err);}finally{form.remove();}
+ const form=document.createElement('form');form.method='POST';form.action=backendUrl;form.target=frame.name;form.enctype='application/x-www-form-urlencoded';form.style.display='none';const input=document.createElement('input');input.name='payload';input.value=body;form.appendChild(input);document.body.appendChild(form);try{form.submit();}catch(err){finish(err);}finally{form.remove();}
  });}
 async function checkCloudReady(){
  const health=await postGAS({action:'health'});
