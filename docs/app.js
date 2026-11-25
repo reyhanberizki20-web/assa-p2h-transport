@@ -1,5 +1,5 @@
 'use strict';
-/* FleetCheck R3.3.3. JSON transport with HTML form fallback, verified cloud save. */
+/* FleetCheck R3.3.3-HF2. JSON transport with HTML form fallback, verified cloud save. */
 const $ = (id) => document.getElementById(id);
 const ITEMS = window.MASTER_P2H.items;
 const MASTER = window.FLEETCHECK_MASTER;
@@ -175,14 +175,17 @@ function backendReady(){return !!getBackendUrl();}
 const API_VERSION='R3.3.3';
 function checkReply(data,txId){
  if(data?.type!=='FLEETCHECK_RESULT'||data.txId!==txId)throw new Error('Respons backend tidak sesuai request.');
- if(data.apiVersion!==API_VERSION)throw new Error('Versi backend belum R3.3.3. Update Code.gs dan Deploy New version.');
+ if(data.apiVersion!==API_VERSION){
+  const actual=typeof data.apiVersion==='string'&&/^[A-Za-z0-9._-]{1,40}$/.test(data.apiVersion)?data.apiVersion:'tidak dilaporkan';
+  throw new Error(`Versi API backend: ${actual}; diperlukan ${API_VERSION}. Admin: buka URL /exec yang sama dengan config.js, cek versi, lalu update Code.gs dan Deploy > Manage deployments > Edit > New version. Jangan reset form.`);
+ }
  if(!data.ok)throw new Error(data.error||'Permintaan gagal.');
  return data;
 }
 async function postGAS(payload){
  const backendUrl=getBackendUrl();
  if(!backendUrl)throw new Error('URL Google Apps Script /exec belum benar di config.js. Admin: salin Web app URL dari Deploy > Manage deployments, lalu perbarui docs/config.js di GitHub.');
- const txId=uid('TX'),request={...payload,txId,origin:location.origin},body=JSON.stringify(request);
+ const txId=uid('TX'),request={...payload,txId,origin:location.origin,clientApiVersion:API_VERSION},body=JSON.stringify(request);
  if(body.length>28000000)throw new Error('Ukuran data melebihi 28 MB. Kurangi ukuran evidence tanpa menghapus foto wajib.');
  // A simple text/plain request avoids a preflight. Apps Script ContentService
  // redirects to googleusercontent.com; browser follows it. Some browsers or
@@ -205,7 +208,8 @@ function postGASFrame(request,body,txId,backendUrl){return new Promise((resolve,
  });}
 async function checkCloudReady(){
  const health=await postGAS({action:'health'});
- if(!health.storageReady||!health.publicSubmit)throw new Error('Admin belum mengaktifkan PUBLIC_SUBMIT=true atau storage belum siap.');
+ if(!health.storageReady)throw new Error('Storage belum siap. Admin: jalankan setupStorage dan verifyStorage di Apps Script.');
+ if(!health.publicSubmit)throw new Error('Admin belum mengaktifkan PUBLIC_SUBMIT=true di Script Properties.');
  if(!health.publicHistory)throw new Error('Admin belum mengaktifkan PUBLIC_HISTORY=true; PDF tidak dapat diunduh kembali.');
 }
 async function sha256Bytes(bytes){
@@ -341,6 +345,7 @@ async function confirmDeleteFromHistory(){
  const actor=value('delete-actor'),code=value('delete-access-code');$('delete-error').hidden=true;
  setBusy(true,'Menghapus laporan dan evidence dari database...');
  try{
+  await postGAS({action:'health'}); // Reject mismatched API before destructive request.
   const result=await postGAS({action:'deleteRecord',recordId:row.recordId,confirmRecordId:row.recordId,confirmText:'HAPUS',actorName:actor,accessCode:code});
   if(result.recordId!==row.recordId||!result.deleted||!result.deletionVerified)throw new Error('Server belum mengonfirmasi penghapusan database. Coba lagi dengan dokumen yang sama.');
   clearHistoryDownload();state.historyRecords=state.historyRecords.filter(x=>x.recordId!==row.recordId);state.deletionTarget=null;$('delete-modal').hidden=true;renderHistory();
