@@ -1,7 +1,7 @@
 'use strict';
-/* FleetCheck R3.3.1 PDF layouts. Requires PDFLib 1.17.1 (loaded in index.html).
- * The MASTER P2H body/layout remains the original exported Excel sheet. Only
- * the top document header is restyled; the original ASSA logo image is embedded.
+/* FleetCheck R3.4 PDF layouts. Requires PDFLib 1.17.1 (loaded in index.html).
+ * The original Master P2H is revised to 27 numbered items; header, vehicle
+ * illustration and signature areas retain their original geometry.
  * Extra evidence pages: four images per page, 2 columns x 2 rows.
  */
 window.FleetPdf = (() => {
@@ -59,7 +59,7 @@ window.FleetPdf = (() => {
   function p2hEvidenceCard(page,entry,logo,font,bold,x,y,w,h,pdf) {
     page.drawRectangle({x,y,width:w,height:h,color:white,borderColor:line,borderWidth:0.9});
     page.drawRectangle({x,y:y+h-38,width:w,height:38,color:soft});
-    const label=entry.item.point?`TITIK ${entry.item.point}  |  ${short(entry.item.label,90)}`:`ITEM ${entry.item.row}  |  ${short(entry.item.label,90)}`;
+    const label=entry.item.point?`ITEM ${String(entry.item.number).padStart(2,'0')} / TITIK ${entry.item.point}  |  ${short(entry.item.label,90)}`:`ITEM ${String(entry.item.number).padStart(2,'0')}  |  ${short(entry.item.label,90)}`;
     page.drawText(label,{x:x+11,y:y+h-16,font:bold,size:fontFit(label,bold,w-23,9.5,5.8),color:navy});
     const status=`HASIL: ${entry.status.toUpperCase()}     WAKTU: ${short(entry.photo.capturedAt,36)}`;
     page.drawText(status,{x:x+11,y:y+h-31,font:font,size:7.1,color:entry.status==='nok'?red:slate});
@@ -74,7 +74,7 @@ window.FleetPdf = (() => {
   async function p2h(data,signatureData,recordId,photos){
     if(!window.PDFLib)throw new Error('Library PDF belum tersedia, cek koneksi internet.');
     preparePalette();
-    const response=await fetch('master-p2h.pdf',{cache:'force-cache'});
+    const response=await fetch('master-p2h-27.pdf',{cache:'force-cache'});
     if(!response.ok)throw new Error('Template Master P2H tidak ditemukan.');
     const pdf=await PDFLib.PDFDocument.load(await response.arrayBuffer());
     const page=pdf.getPages()[0],H=page.getHeight(),W=page.getWidth();
@@ -96,9 +96,9 @@ window.FleetPdf = (() => {
         // Master P2H item 09: replace only the dotted placeholder, not its label,
         // parentheses, grid or other content. Coordinates from original PDF text.
         const dateText=data.apar_expiry_date?dateLabel(data.apar_expiry_date):'-';
-        page.drawRectangle({x:98.6,y:y-1.7,width:34.8,height:7.4,color:white});
-        const size=fontFit(dateText,font,33.5,6,4.5),tw=font.widthOfTextAtSize(dateText,size);
-        page.drawText(dateText,{x:98.6+(34.8-tw)/2,y,font,size,color:navy});
+        page.drawRectangle({x:114.704,y:y-1.7,width:35.028,height:7.4,color:white});
+        const size=fontFit(dateText,font,34.428,6,4.5),tw=font.widthOfTextAtSize(dateText,size);
+        page.drawText(dateText,{x:114.704+(35.028-tw)/2,y,font,size,color:navy});
       }
       page.drawText(check.status==='ok'?'v':'x',{x:402,y,font:bold,size:7,color:navy});
       if(check.note){
