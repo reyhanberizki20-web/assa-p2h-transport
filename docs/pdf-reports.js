@@ -1,5 +1,5 @@
 'use strict';
-/* FleetCheck R3.4 PDF layouts. Requires PDFLib 1.17.1 (loaded in index.html).
+/* FleetCheck R3.5 PDF layouts. Requires PDFLib 1.17.1 (loaded in index.html).
  * The original Master P2H is revised to 27 numbered items; header, vehicle
  * illustration and signature areas retain their original geometry.
  * Extra evidence pages: four images per page, 2 columns x 2 rows.
@@ -11,11 +11,12 @@ window.FleetPdf = (() => {
     navy=C(22,34,53);slate=C(64,78,97);soft=C(241,245,249);
     gold=C(233,183,0);white=C(255,255,255);line=C(213,222,233);red=C(171,40,45);
   }
+  // A single ordered photo master drives the form, validation and PDF grid.
   const cleanAreas = [
-    {key:'inside',title:'HASIL PEMBERSIHAN DALAM KONTAINER'},
-    {key:'door',title:'HASIL PEMBERSIHAN LUAR PINTU KONTAINER'},
-    {key:'sterico_before',title:'STERICO TRAP - SEBELUM PEMBERSIHAN'},
-    {key:'sterico_after',title:'STERICO TRAP - SESUDAH PEMBERSIHAN'}
+    {key:'sterico_before',title:'STERICO TRAP - SEBELUM PEMBERSIHAN',label:'Sterico Trap Sebelum Pembersihan'},
+    {key:'inside',title:'HASIL PEMBERSIHAN DALAM KONTAINER',label:'Bukti Hasil Pembersihan Dalam Kontainer'},
+    {key:'sterico_after',title:'STERICO TRAP - SESUDAH PEMBERSIHAN',label:'Sterico Trap Sesudah Pembersihan'},
+    {key:'door',title:'HASIL PEMBERSIHAN LUAR PINTU KONTAINER',label:'Bukti Hasil Pembersihan Luar Pintu Kontainer'}
   ];
   const textSafe = value => String(value ?? '').normalize('NFKD').replace(/[^\x20-\x7e\xA0-\xFF]/g,'?');
   const short = (v, max) => textSafe(v).replace(/\s+/g,' ').trim().slice(0,max || 300);
@@ -83,7 +84,8 @@ window.FleetPdf = (() => {
     drawP2HHeader(page,logo,bold,font);
     const write=(v,x,top,maxWidth=160,size=7,min=4)=>{
       const str=short(v,300);if(!str)return;
-      page.drawText(str,{x,y:H-top,font,size:fontFit(str,font,maxWidth,size,min),color:navy});
+      const fitted=Math.min(fontFit(str,font,maxWidth,size,min),maxWidth/Math.max(font.widthOfTextAtSize(str,1),.01));
+      page.drawText(str,{x,y:H-top,font,size:fitted,color:navy});
     };
     write(`${data.person_name} (${data.role})`,86,87.08,276,8,5.5);write(data.truck,86,97.127,276,8,5.5);
     write(data.container,86,107.174,276,8,5.5);write(data.plate,86,117.22,276,8,5.5);
@@ -110,26 +112,49 @@ window.FleetPdf = (() => {
     if(data.additional_notes){
       wrapped(data.additional_notes,font,8,310,9).forEach((line,i)=>page.drawText(line,{x:149,y:H-458-i*10.5,font,size:8,color:navy}));
     }
+    // R3.5: one center axis for signature, actual person name and actual role.
+    // Cover only the existing printed labels. Keep both original column positions.
     const sig=await pdf.embedPng(dataBytes(signatureData));
     const role=short(data.role,30).trim()||'PEMBUAT';
-    // Driver and co-driver sign in the driver column; dispatcher and custom
-    // roles use the Unit Control column, whose printed role label is replaced.
+    const name='( '+short(data.person_name,80)+' )';
     const driverSide=['DRIVER','CO-DRIVER'].includes(role.toUpperCase());
-    const slots=driverSide?[{x:716,top:80,w:88,h:38},{x:590,top:501,w:78,h:42}]:[{x:618,top:80,w:87,h:38},{x:485,top:501,w:78,h:42}];
-    for(const pos of slots){const size=fitImage(sig,pos.w,pos.h);page.drawImage(sig,{x:pos.x+(pos.w-size.width)/2,y:H-pos.top-pos.h+(pos.h-size.height)/2,width:size.width,height:size.height});}
-    // R3.3.1: both original Driver labels are blank, independent of the selected role.
-    // Keep the existing signature placement and non-driver (left-column) behavior.
-    const rightLabels=[{x:716,top:117,w:84,h:17},{x:585,top:545,w:85,h:17}];
-    const leftLabels=[{x:615,top:117,w:81,h:17},{x:481,top:545,w:83,h:17}];
-    const drawSignatureLabel=(box,label)=>{
-      page.drawRectangle({x:box.x,y:H-box.top-box.h,width:box.w,height:box.h,color:white});
-      const labelSize=fontFit(label,font,box.w-4,7.5,4.1);
-      const tw=font.widthOfTextAtSize(label,labelSize);
-      page.drawText(label,{x:box.x+(box.w-tw)/2,y:H-box.top-11.5,font,size:labelSize,color:navy});
+    const groups=[
+      {left:660,right:753,coverLeft:{x:615,top:117,w:81,h:17},coverRight:{x:716,top:117,w:84,h:17},sigTop:77,nameTop:120,roleTop:132,w:90},
+      {left:522,right:622,coverLeft:{x:481,top:545,w:83,h:17},coverRight:{x:585,top:545,w:85,h:17},sigTop:498,nameTop:548,roleTop:560,w:90}
+    ];
+    const centered=(text,cx,top,f,size)=>{
+      page.drawText(text,{x:cx-f.widthOfTextAtSize(text,size)/2,y:H-top,font:f,size,color:navy});
     };
-    for(const box of rightLabels)drawSignatureLabel(box,'(                           )');
-    if(!driverSide){
-      for(const box of leftLabels)drawSignatureLabel(box,`( ${role} )`);
+    // Wrap even exceptionally long manually entered names; do not truncate them.
+    function nameLines(text,maxWidth){
+      let size=8,lines;
+      function splitAtWidth(n){
+        const out=[];let line='';
+        for(const char of text){
+          if(line && bold.widthOfTextAtSize(line+char,n)>maxWidth){
+            const space=line.lastIndexOf(' ');
+            if(space>Math.floor(line.length/2)){out.push(line.slice(0,space).trim());line=line.slice(space+1)+char;}
+            else{out.push(line);line=char;}
+          }else line+=char;
+        }
+        if(line.trim())out.push(line.trim());return out;
+      }
+      while(true){lines=splitAtWidth(size);if(lines.length<=3&&lines.every(l=>bold.widthOfTextAtSize(l,size)<=maxWidth))return {lines,size};size-=.25;}
+    }
+    for(const g of groups){
+      for(const b of [g.coverLeft,g.coverRight])page.drawRectangle({x:b.x,y:H-b.top-b.h,width:b.w,height:b.h,color:white});
+      const cx=driverSide?g.right:g.left,emptyCx=driverSide?g.left:g.right;
+      const nm=nameLines(name,g.w-4),leading=Math.max(5,nm.size+1),firstTop=g.nameTop-(nm.lines.length-1)*leading;
+      // Signature has the same horizontal center as both text labels. Reserve
+      // vertical space for wrapped names, including custom names/roles.
+      const sigH=Math.min(38,firstTop-g.sigTop-nm.size-3);
+      const size=fitImage(sig,g.w-6,sigH);
+      page.drawImage(sig,{x:cx-size.width/2,y:H-g.sigTop-sigH+(sigH-size.height)/2,width:size.width,height:size.height});
+      nm.lines.forEach((line,i)=>centered(line,cx,firstTop+i*leading,bold,nm.size));
+      const roleSize=Math.min(7.2,(g.w-4)/Math.max(font.widthOfTextAtSize(role,1),.01));
+      centered(role,cx,g.roleTop,font,roleSize);
+      // Inactive column: keep an empty placeholder, no signature or actual role.
+      centered('(                           )',emptyCx,g.roleTop,font,7.2);
     }
     const evidence=window.MASTER_P2H.items.filter(item=>photos[item.row]).map(item=>({item,photo:photos[item.row],status:data.checks[item.row].status,note:data.checks[item.row].note}));
     const margin=27,gap=12,cardW=(W-margin*2-gap)/2,cardH=220;

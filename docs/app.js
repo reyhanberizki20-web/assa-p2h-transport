@@ -1,5 +1,5 @@
 'use strict';
-/* FleetCheck R3.4. JSON transport with HTML form fallback, verified cloud save. */
+/* FleetCheck R3.5. JSON transport with HTML form fallback, verified cloud save. */
 const $ = (id) => document.getElementById(id);
 const ITEMS = window.MASTER_P2H.items;
 const P2H_SCHEMA = 'P2H-27-V1';
@@ -84,10 +84,7 @@ function renderChecklist(){const frag=[];let prev='';for(let idx=0;idx<ITEMS.len
 }
 function updatePhotoRow(row){const image=state.pPhotos[row],item=ITEMS.find(i=>i.row===row),nok=document.querySelector(`input[name="st-${row}"][value="nok"]`).checked;const txt=document.querySelector(`[data-photo-status="${row}"]`),thumb=document.querySelector(`[data-thumb="${row}"]`),button=document.querySelector(`[data-photo="${row}"]`);if(image){thumb.src=image.dataUrl;thumb.hidden=false;txt.textContent=`✓ Foto ${image.capturedAt}`;txt.style.color='#047857';button.textContent='↻ Ulangi Foto';} else{thumb.hidden=true;txt.textContent=item.point?'Foto wajib':(nok?'Foto wajib karena NOK':'Foto opsional');txt.style.color='';button.textContent='📷 Ambil Foto';}}
 function renderClean(){
- const arr=[{key:'sterico_before',label:'Sterico Trap - SEBELUM Pembersihan'},
- {key:'inside',label:'Bukti Hasil Pembersihan Dalam Kontainer'},
- {key:'door',label:'Bukti Hasil Pembersihan Luar Pintu Kontainer'},
- {key:'sterico_after',label:'Sterico Trap - SESUDAH Pembersihan'}];
+ const arr=window.FleetPdf.cleanAreas;
  $('clean-photogrid').innerHTML=arr.map((x,i)=>{
  const p=state.cPhotos[x.key];
  return `<div class="photo-card"><b>${String(i+1).padStart(2,'0')}. ${safe(x.label)} *</b>${p?`<img class="photo-big" src="${p.dataUrl}" alt="Foto bukti pembersihan"><small>${safe(p.capturedAt)}</small>`:'<span style="font-size:34px">📷</span><small>Belum ada foto - wajib</small>'}<button class="btn-photo" type="button" data-clean-photo="${x.key}">${p?'↻ Ulangi Foto':'📷 Buka Kamera Langsung'}</button></div>`;
@@ -119,23 +116,20 @@ function resetClean(){
 }
 async function openCamera(kind,key,label){
  if(state.active)return;clearError();
+ let clearFollowing=[];
  if(kind==='clean'){
-  if(key!=='sterico_before'&&!state.cPhotos.sterico_before){alertError('Ambil foto Sterico Trap SEBELUM pembersihan terlebih dahulu.');return;}
-  if(key==='sterico_after'&&(!state.cPhotos.inside||!state.cPhotos.door)){alertError('Selesaikan foto hasil dalam dan luar kontainer sebelum foto Sterico Trap SESUDAH.');return;}
-  if(key==='sterico_before'&&(state.cPhotos.inside||state.cPhotos.door||state.cPhotos.sterico_after)){
-   if(!confirm('Mengulang foto SEBELUM akan mengosongkan foto hasil dalam/luar dan SESUDAH agar urutan dokumentasi benar. Lanjutkan?'))return;
-   delete state.cPhotos.inside;delete state.cPhotos.door;delete state.cPhotos.sterico_after;renderClean();
-  }
-  if((key==='inside'||key==='door')&&state.cPhotos.sterico_after){
-   if(!confirm('Mengulang foto hasil pembersihan akan mengosongkan foto Sterico Trap SESUDAH. Lanjutkan?'))return;
-   delete state.cPhotos.sterico_after;renderClean();
-  }
+  const areas=window.FleetPdf.cleanAreas,index=areas.findIndex(a=>a.key===key);
+  if(index<0){alertError('Jenis foto tidak dikenal.');return;}
+  const missing=areas.slice(0,index).find(a=>!state.cPhotos[a.key]);
+  if(missing){alertError('Ambil foto '+missing.label+' terlebih dahulu.');return;}
+  clearFollowing=areas.slice(index+1).map(a=>a.key).filter(k=>state.cPhotos[k]);
+  if(clearFollowing.length&&!confirm('Mengulang foto ini akan mengosongkan foto setelahnya agar urutan dokumentasi tetap benar. Lanjutkan?'))return;
  }
- closeCamera();state.camera={kind,key,label};$('camera-label').textContent=label;$('camera-meta').textContent='';$('camera-modal').hidden=false;try{if(!navigator.mediaDevices?.getUserMedia)throw new Error('Browser tidak mendukung kamera langsung. Buka melalui HTTPS (GitHub Pages) atau localhost.');state.stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:960}}});$('camera-video').srcObject=state.stream;await $('camera-video').play();}catch(err){closeCamera();alertError('Kamera tidak bisa dibuka: '+(err.message||err.name)+'. Izinkan akses kamera dan gunakan HTTPS.');}}
+ closeCamera();state.camera={kind,key,label,clearFollowing};$('camera-label').textContent=label;$('camera-meta').textContent='';$('camera-modal').hidden=false;try{if(!navigator.mediaDevices?.getUserMedia)throw new Error('Browser tidak mendukung kamera langsung. Buka melalui HTTPS (GitHub Pages) atau localhost.');state.stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:960}}});$('camera-video').srcObject=state.stream;await $('camera-video').play();}catch(err){closeCamera();alertError('Kamera tidak bisa dibuka: '+(err.message||err.name)+'. Izinkan akses kamera dan gunakan HTTPS.');}}
 function closeCamera(){if(state.stream){for(const t of state.stream.getTracks())t.stop();state.stream=null;}$('camera-video').srcObject=null;$('camera-modal').hidden=true;state.camera=null;}
 function captureCamera(){const c=state.camera,v=$('camera-video');if(!c||!v.videoWidth)throw new Error('Kamera belum siap.');const ratio=Math.min(1,1280/v.videoWidth,960/v.videoHeight);const w=Math.round(v.videoWidth*ratio),h=Math.round(v.videoHeight*ratio);const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;const ctx=canvas.getContext('2d');ctx.drawImage(v,0,0,w,h);
   const d=new Date();const ts=d.toLocaleString('id-ID',{hour12:false});const plate=(c.kind==='p2h'?selectedMasterValue('p-plate'):selectedMasterValue('c-plate')).toUpperCase().slice(0,28);ctx.fillStyle='rgba(10,17,34,0.80)';ctx.fillRect(0,h-39,w,39);ctx.fillStyle='#fff';ctx.font=`bold ${Math.max(12,Math.round(w/90))}px Arial`;ctx.fillText(`FleetCheck • ${plate||'KENDARAAN'} • ${c.kind==='p2h'?'P2H '+(ITEMS.find(i=>i.row===Number(c.key))?.number||c.key):String(c.label).slice(0,45)}`,12,h-23);ctx.font=`${Math.max(10,Math.round(w/110))}px Arial`;ctx.fillText(`Waktu perangkat: ${ts}`,12,h-8);
-  let dataUrl=canvas.toDataURL('image/jpeg',.68);for(const quality of [.60,.52,.45,.38,.32]){if(dataUrl.length<420000)break;dataUrl=canvas.toDataURL('image/jpeg',quality);}if(dataUrl.length>450000)throw new Error('Foto terlalu besar untuk dikirim. Coba arahkan ulang kamera.');const item={dataUrl,capturedAt:ts,label:c.label};if(c.kind==='p2h'){state.pPhotos[c.key]=item;updatePhotoRow(Number(c.key));}else{state.cPhotos[c.key]=item;renderClean();}closeCamera();toast('Foto diambil langsung dari kamera.');}
+  let dataUrl=canvas.toDataURL('image/jpeg',.68);for(const quality of [.60,.52,.45,.38,.32]){if(dataUrl.length<420000)break;dataUrl=canvas.toDataURL('image/jpeg',quality);}if(dataUrl.length>450000)throw new Error('Foto terlalu besar untuk dikirim. Coba arahkan ulang kamera.');const item={dataUrl,capturedAt:ts,label:c.label};if(c.kind==='p2h'){state.pPhotos[c.key]=item;updatePhotoRow(Number(c.key));}else{for(const key of c.clearFollowing||[])delete state.cPhotos[key];state.cPhotos[c.key]=item;renderClean();}closeCamera();toast('Foto diambil langsung dari kamera.');}
 /* Signature canvas: transparent PNG and no upload. */
 const sigCanvas=$('signature'),sigCtx=sigCanvas.getContext('2d');sigCtx.lineCap='round';sigCtx.lineJoin='round';sigCtx.strokeStyle='#0f172a';sigCtx.lineWidth=3;
 function clearSignature(){sigCtx.clearRect(0,0,sigCanvas.width,sigCanvas.height);state.signatureSigned=false;}
@@ -209,7 +203,7 @@ function postGASFrame(request,body,txId,backendUrl){return new Promise((resolve,
  });}
 async function checkCloudReady(requireP2H=false){
  const health=await postGAS({action:'health'});
- if(requireP2H && (health.p2hChecklistVersion!==P2H_SCHEMA || window.MASTER_P2H.schemaVersion!==P2H_SCHEMA || ITEMS.length!==27))throw new Error('Checklist P2H 27 item belum sinkron. Admin: update Code.gs ke Build R3.4 dan deploy New version, lalu pastikan GitHub memuat master-map.js terbaru.');
+ if(requireP2H && (health.p2hChecklistVersion!==P2H_SCHEMA || window.MASTER_P2H.schemaVersion!==P2H_SCHEMA || ITEMS.length!==27))throw new Error('Checklist P2H 27 item belum sinkron. Admin: update Code.gs ke Build R3.5 atau R3.4-HF1 dan deploy New version, lalu pastikan GitHub memuat master-map.js terbaru.');
  if(!health.storageReady)throw new Error('Storage belum siap. Admin: jalankan setupStorage dan verifyStorage di Apps Script.');
  if(!health.publicSubmit)throw new Error('Admin belum mengaktifkan PUBLIC_SUBMIT=true di Script Properties.');
  if(!health.publicHistory)throw new Error('Admin belum mengaktifkan PUBLIC_HISTORY=true; PDF tidak dapat diunduh kembali.');
