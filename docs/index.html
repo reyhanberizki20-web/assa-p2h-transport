@@ -6,18 +6,19 @@
   <meta name="theme-color" content="#0f172a">
   <meta name="description" content="P2H dan kebersihan kendaraan: inspeksi, live camera evidence, tanda tangan dan PDF lampiran.">
   <title>FleetCheck • P2H & Kebersihan Truck</title>
-  <link rel="stylesheet" href="styles.css?v=3.3.2">
+  <link rel="stylesheet" href="styles.css?v=3.6">
   <script defer src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
   <script defer src="config.js?v=3.4"></script>
   <script defer src="master-map.js?v=3.4"></script>
   <script defer src="master-options.js"></script>
   <script defer src="pdf-reports.js?v=3.5"></script>
-  <script defer src="app.js?v=3.5"></script>
+  <script defer src="history-zip.js?v=3.6"></script>
+  <script defer src="app.js?v=3.6"></script>
 </head>
 <body>
   <header class="topbar">
     <div class="brand"><span class="brand-mark">▦</span><div><b>FleetCheck</b><small>Vehicle Inspection System</small></div></div>
-    <div class="topbar-right"><span class="top-pill"><span class="pulse"></span> Live Camera Only</span><span class="version">R3.5 • Cloud</span></div>
+    <div class="topbar-right"><span class="top-pill"><span class="pulse"></span> Live Camera Only</span><span class="version">R3.6 • Cloud</span></div>
   </header>
   <main class="layout">
     <section class="hero" aria-label="Judul sistem">
@@ -120,11 +121,18 @@
         <div id="history-view" hidden>
           <div class="section-title"><div><span>▤</span><b>Arsip Dokumen & Riwayat Pengisian</b></div><small>PDF tersimpan di Google Drive</small></div>
           <div class="notice"><span>☁</span><div><b>Unduh ulang PDF yang sudah tersimpan</b><p>Riwayat menampilkan formulir P2H dan Kebersihan Truck yang aktif. Lihat dan unduh PDF tanpa kode akses. Untuk menghapus, wajib memasukkan kode akses petugas dan melewati dua tahap konfirmasi. Penghapusan menghapus baris laporan dan evidence dari Google Sheets, memindahkan folder ke Trash Drive, serta mempertahankan jejak audit.</p></div></div>
-          <div class="history-tools"><label>Cari riwayat<input id="history-search" maxlength="100" placeholder="Nama pembuat, nomor polisi, tanggal, jenis form..."></label><button class="btn btn-primary" type="button" id="history-refresh">↻ Muat Riwayat</button></div>
-          <div id="history-download-ready" hidden role="status" class="notice"><div><b>PDF dari Google Drive siap diunduh.</b><p>Tekan tombol di bawah untuk menyimpan PDF ke perangkat.</p><div id="history-download-link"></div></div></div>
+          <div class="history-filters" aria-label="Filter riwayat form">
+            <label>Tanggal Mulai<input id="history-date-from" type="date"></label>
+            <label>Tanggal Akhir<input id="history-date-to" type="date"></label>
+            <label>Jenis Form<select id="history-form-type"><option value="">All Form</option><option value="P2H">P2H</option><option value="CLEAN">Kebersihan Truck</option></select></label>
+          </div>
+          <div class="history-tools"><label>Cari riwayat<input id="history-search" maxlength="100" placeholder="Nama pembuat, nomor polisi, tanggal, jenis form..."></label><button class="btn btn-ghost" type="button" id="history-reset">Reset Filter</button><button class="btn btn-primary" type="button" id="history-refresh">↻ Muat Riwayat</button></div>
+          <div class="history-selection"><div><b id="history-selected-count" aria-live="polite">0 laporan dipilih</b><small>Centang header untuk memilih semua hasil filter, termasuk halaman berikutnya.</small></div><div class="history-selection-actions"><button class="btn btn-ghost btn-small" type="button" id="history-clear-selection" disabled>Batal Pilihan</button><button class="btn btn-primary" type="button" id="history-bulk-download" disabled>⬇ Download Terpilih (0)</button></div></div>
+          <div id="history-bulk-progress" class="history-progress" hidden role="status"><span id="history-bulk-status" aria-live="polite"></span><progress id="history-bulk-meter" value="0" max="1"></progress><button class="btn btn-ghost btn-small" type="button" id="history-bulk-cancel">Batalkan Proses</button></div>
+          <div id="history-download-ready" hidden role="status" class="notice"><div><b id="history-download-title">PDF dari Google Drive siap diunduh.</b><p id="history-download-text">Tekan tombol di bawah untuk menyimpan PDF ke perangkat.</p><div id="history-download-link"></div></div></div>
           <p class="history-status" id="history-status">Klik Muat Riwayat untuk mengambil arsip dari Google Sheets.</p>
           <div class="history-paging"><button type="button" class="btn btn-ghost btn-small" id="history-prev" disabled>← Sebelumnya</button><span id="history-page-info">Halaman 1</span><button type="button" class="btn btn-ghost btn-small" id="history-next" disabled>Selanjutnya →</button></div>
-          <div class="history-scroll"><table class="review-table history-table"><thead><tr><th>Tanggal</th><th>Jenis</th><th>Pembuat</th><th>No. Polisi</th><th>Nama PDF</th><th>Aksi</th></tr></thead><tbody id="history-table-body"><tr><td colspan="6">Riwayat belum dimuat.</td></tr></tbody></table></div>
+          <div class="history-scroll"><table class="review-table history-table"><thead><tr><th class="history-check-cell"><input id="history-select-all" type="checkbox" disabled aria-label="Pilih semua laporan sesuai filter" title="Pilih semua hasil filter, termasuk halaman berikutnya"></th><th>Tanggal</th><th>Jenis</th><th>Pembuat</th><th>No. Polisi</th><th>Nama PDF</th><th>Aksi</th></tr></thead><tbody id="history-table-body"><tr><td colspan="7">Riwayat belum dimuat.</td></tr></tbody></table></div>
         </div>
         <div id="save-result" class="result" hidden>
           <div class="result-symbol">✓</div><h2 id="result-title">Tersimpan</h2><p id="result-message"></p><div id="result-links" class="result-links"></div>
@@ -152,6 +160,16 @@
       <div class="actions"><button class="btn btn-ghost" id="delete-cancel" type="button">Batalkan</button><button class="btn btn-danger" id="delete-confirm" type="button" disabled>Konfirmasi Hapus</button></div>
     </div>
   </div>
+  <dialog id="history-preview-modal" class="history-preview" aria-labelledby="history-preview-title">
+    <header class="history-preview-head"><div><span class="eyebrow">ARSIP DIGITAL / PDF</span><h3 id="history-preview-title">Preview PDF</h3></div><button id="history-preview-close" class="btn btn-ghost btn-small" type="button" aria-label="Tutup preview">✕ Tutup</button></header>
+    <div class="history-preview-toolbar">
+      <div id="history-preview-nav" class="history-preview-nav" hidden><button id="history-preview-prev" class="btn btn-ghost btn-small" type="button" aria-label="Halaman sebelumnya">←</button><span id="history-preview-page" aria-live="polite">Halaman 1 / 1</span><button id="history-preview-next" class="btn btn-ghost btn-small" type="button" aria-label="Halaman berikutnya">→</button></div>
+      <div id="history-preview-zoom" class="history-preview-nav" hidden><button id="history-preview-minus" class="btn btn-ghost btn-small" type="button" aria-label="Zoom out">−</button><button id="history-preview-fit" class="btn btn-ghost btn-small" type="button">Fit</button><button id="history-preview-plus" class="btn btn-ghost btn-small" type="button" aria-label="Zoom in">+</button></div>
+      <div class="history-preview-nav"><a id="history-preview-open" class="btn btn-ghost btn-small" target="_blank" rel="noopener noreferrer">Buka PDF</a><a id="history-preview-download" class="btn btn-primary btn-small">⬇ Download PDF</a></div>
+    </div>
+    <p id="history-preview-status" class="history-preview-status" role="status">Memuat PDF...</p>
+    <div id="history-preview-body" class="history-preview-body"><canvas id="history-preview-canvas" hidden aria-label="Halaman PDF"></canvas><iframe id="history-preview-frame" hidden title="Preview PDF asli" referrerpolicy="no-referrer"></iframe></div>
+  </dialog>
   <iframe id="backend-frame" title="Respons penyimpanan" name="fleetcheck-backend-frame" hidden></iframe>
   <div id="toast" role="status" class="toast"></div>
 </body>

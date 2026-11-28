@@ -1,5 +1,5 @@
 'use strict';
-/* FleetCheck R3.5. JSON transport with HTML form fallback, verified cloud save. */
+/* FleetCheck R3.6. JSON transport with HTML form fallback, verified cloud save. */
 const $ = (id) => document.getElementById(id);
 const ITEMS = window.MASTER_P2H.items;
 const P2H_SCHEMA = 'P2H-27-V1';
@@ -54,7 +54,7 @@ function initReferenceDropdowns() {
 const state = {
   view: 'p2h', step: 1, pPhotos: {}, cPhotos: {}, camera: null,
   stream: null, signatureSigned: false, signing: false, active: false,
-  pId: null, cId: null, pSaved: false, cSaved: false, lastPdf: null, historyRecords: [], historyPage: 1, historyPages: 1, historyTotal: 0, deletionTarget: null
+  pId: null, cId: null, pSaved: false, cSaved: false, lastPdf: null, historyRecords: [], historyPage: 1, historyPages: 1, historyTotal: 0, historySelected: new Set(), historyReady: false, historyKey: '', bulkCancelled: false, deletionTarget: null
 };
 const safe = (x) => String(x ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[c]));
 const value = (id) => ($(id).value || '').trim();
@@ -64,18 +64,18 @@ function clearError(){$('global-alert').hidden=true;}
 function dateStr(d = new Date()){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
 function timeStr(d = new Date()){return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;}
 function uid(prefix){const d=new Date();const token=(globalThis.crypto?.randomUUID?.() || String(Math.random()).slice(2)).replace(/-/g,'').slice(0,10).toUpperCase();return `${prefix}-${dateStr(d).replace(/-/g,'')}-${token}`;}
-function setBusy(busy,label){state.active=busy;for(const id of ['submit-p2h','submit-clean','history-refresh'])$(id).disabled=busy;validateDeleteDialog();if(busy)toast(label||'Memproses...');}
+function setBusy(busy,label){state.active=busy;for(const id of ['submit-p2h','submit-clean','history-refresh'])$(id).disabled=busy;validateDeleteDialog();updateHistoryControls();if(busy)toast(label||'Memproses...');}
 function setView(which){
  if(state.active)return;closeCamera();state.view=which;clearError();
  if(which==='p2h'&&state.pSaved)resetP2H();
  if(which==='clean'&&state.cSaved)resetClean();
- if(which!=='history')clearHistoryDownload();
+ if(which!=='history'){clearTimeout(state.searchTimer);clearHistoryDownload();clearHistorySelection();}
  $('save-result').hidden=true;$('p2h-view').hidden=which!=='p2h';
  $('clean-view').hidden=which!=='clean';$('history-view').hidden=which!=='history';
  for(const b of document.querySelectorAll('.nav'))b.classList.toggle('active',b.dataset.view===which);
  const cfg={p2h:['Pemeriksaan P2H','FORM INSPEKSI','Pemeriksaan kelayakan & perlengkapan container dan truck vendor.'],clean:['Kebersihan Truck','FORM KEBERSIHAN','Empat evidence kamera langsung termasuk Sterico Trap sebelum dan sesudah.'],history:['Riwayat Form','ARSIP DIGITAL','Cari hasil pengisian, unduh ulang PDF atau hapus dengan double verification.']}[which];
  $('page-title').textContent=cfg[0];$('page-eyebrow').textContent=cfg[1];$('page-subtitle').textContent=cfg[2];
- if(which==='history')loadHistory();window.scrollTo({top:0,behavior:'smooth'});
+ if(which==='history')loadHistory(1,true);window.scrollTo({top:0,behavior:'smooth'});
 }
 function setStep(n){state.step=n;for(let i=1;i<=3;i++){$(`p2h-step-${i}`).hidden=i!==n;}for(const s of document.querySelectorAll('.stepper [data-step]')){const sn=Number(s.dataset.step);s.classList.toggle('current',sn===n);s.classList.toggle('done',sn<n);}if(n===3)$('sign-name').textContent=selectedMasterValue('p-person')+' • '+selectedMasterValue('p-role');clearError();window.scrollTo({top:0,behavior:'smooth'});}
 function renderChecklist(){const frag=[];let prev='';for(let idx=0;idx<ITEMS.length;idx++){const item=ITEMS[idx];if(item.section!==prev){prev=item.section;frag.push(`<div class="check-section">${safe(item.section)}</div>`);}const req=item.point?`<span class="check-tag">Titik ${item.point} • Foto Wajib</span>`:'';frag.push(`<div class="check-row" data-row="${item.row}"><div class="check-row-top"><span class="check-num">${String(idx+1).padStart(2,'0')}</span><div class="check-name">${safe(item.row===APAR_ROW?'Alat Pemadam Api (APAR)':item.label)}</div>${req}</div>${item.row===APAR_ROW?`<div class="apar-date-field fields-grid"><label for="p-apar-expiry">Expired Date (APAR)<input id="p-apar-expiry" type="date" aria-describedby="apar-date-help"><small id="apar-date-help">Wajib jika OK. Jika NOK dan tanggal tidak diketahui, isi keterangan.</small></label></div>`:''}<div class="check-controls" role="group" aria-label="Status ${safe(item.label)}"><label class="radio-label"><input type="radio" name="st-${item.row}" value="ok">OK</label><label class="radio-label nok"><input type="radio" name="st-${item.row}" value="nok">NOK</label></div><input class="check-note" data-note="${item.row}" maxlength="72" placeholder="Keterangan NOK wajib diisi" hidden><div class="photo-row"><button type="button" class="btn-photo" data-photo="${item.row}">📷 Ambil Foto</button><span class="photo-status" data-photo-status="${item.row}">${item.point?'Foto wajib': 'Wajib jika NOK / opsional jika OK'}</span><img class="photo-thumb" data-thumb="${item.row}" hidden alt="Pratinjau foto evidence"></div></div>`);} $('p2h-checklist').innerHTML=frag.join('');
@@ -203,7 +203,7 @@ function postGASFrame(request,body,txId,backendUrl){return new Promise((resolve,
  });}
 async function checkCloudReady(requireP2H=false){
  const health=await postGAS({action:'health'});
- if(requireP2H && (health.p2hChecklistVersion!==P2H_SCHEMA || window.MASTER_P2H.schemaVersion!==P2H_SCHEMA || ITEMS.length!==27))throw new Error('Checklist P2H 27 item belum sinkron. Admin: update Code.gs ke Build R3.5 atau R3.4-HF1 dan deploy New version, lalu pastikan GitHub memuat master-map.js terbaru.');
+ if(requireP2H && (health.p2hChecklistVersion!==P2H_SCHEMA || window.MASTER_P2H.schemaVersion!==P2H_SCHEMA || ITEMS.length!==27))throw new Error('Checklist P2H 27 item belum sinkron. Admin: update Code.gs ke Build R3.6 atau R3.5 dan deploy New version, lalu pastikan GitHub memuat master-map.js terbaru.');
  if(!health.storageReady)throw new Error('Storage belum siap. Admin: jalankan setupStorage dan verifyStorage di Apps Script.');
  if(!health.publicSubmit)throw new Error('Admin belum mengaktifkan PUBLIC_SUBMIT=true di Script Properties.');
  if(!health.publicHistory)throw new Error('Admin belum mengaktifkan PUBLIC_HISTORY=true; PDF tidak dapat diunduh kembali.');
@@ -288,45 +288,146 @@ async function submitClean(){
  }catch(e){alertError('Gagal menyimpan: '+e.message+' — Jawaban dan foto belum di-reset.');}
  finally{setBusy(false);}
 }
+function historyFilters(){return {search:value('history-search'),dateFrom:value('history-date-from'),dateTo:value('history-date-to'),formType:value('history-form-type')};}
+function historyFilterKey(){return JSON.stringify(historyFilters());}
+function validateHistoryFilters(f){if((f.dateFrom&&!validCalendarDate(f.dateFrom))||(f.dateTo&&!validCalendarDate(f.dateTo)))throw new Error('Filter tanggal tidak valid.');if(f.dateFrom&&f.dateTo&&f.dateFrom>f.dateTo)throw new Error('Tanggal mulai tidak boleh melebihi tanggal akhir.');}
 function clearHistoryDownload(){
  const area=$('history-download-link');for(const a of area.querySelectorAll('a[href^="blob:"]'))URL.revokeObjectURL(a.href);area.replaceChildren();$('history-download-ready').hidden=true;
 }
+function clearHistorySelection(){state.historySelected.clear();clearHistoryDownload();updateHistoryControls();}
+function updateHistoryControls(){
+ const selected=state.historySelected,ready=state.historyReady&&state.historyKey===historyFilterKey(),usable=ready&&!state.active;
+ for(const id of ['history-search','history-date-from','history-date-to','history-form-type','history-reset'])$(id).disabled=state.active;
+ const all=$('history-select-all');all.disabled=!usable||state.historyTotal===0;all.checked=!!state.historySelectingAll||(ready&&state.historyTotal>0&&selected.size===state.historyTotal&&state.historyRecords.every(r=>selected.has(r.recordId)));all.indeterminate=ready&&selected.size>0&&!all.checked;
+ $('history-selected-count').textContent=`${selected.size} dari ${state.historyTotal} laporan dipilih`;
+ $('history-bulk-download').textContent=`⬇ Download Terpilih (${selected.size})`;$('history-bulk-download').disabled=!usable||!selected.size;
+ $('history-clear-selection').disabled=state.active||!selected.size;
+ $('history-prev').disabled=!usable||state.historyPage<=1;$('history-next').disabled=!usable||state.historyPage>=state.historyPages;
+ for(const c of $('history-table-body').querySelectorAll('[data-select-id]')){c.checked=selected.has(c.dataset.selectId);c.disabled=!usable;c.closest('tr').classList.toggle('is-selected',c.checked);}
+ for(const b of $('history-table-body').querySelectorAll('[data-download-id],[data-view-id],[data-delete-id]'))b.disabled=!usable||b.dataset.hasPdf==='false';
+}
 function renderHistory(){
  const records=state.historyRecords;
- $('history-table-body').innerHTML=records.length?records.map(r=>`<tr><td>${safe(r.date.split('-').reverse().join('/'))}<small>${safe(r.recordId)}</small></td><td>${safe(r.type)}</td><td>${safe(r.person)}</td><td>${safe(r.plate)}</td><td>${safe(r.fileName)}</td><td><button class="row-action" data-download-id="${safe(r.recordId)}" ${r.hasPdf?'':'disabled'}>⬇ Download</button><button class="row-action delete" data-delete-id="${safe(r.recordId)}">🗑 Hapus</button></td></tr>`).join(''):'<tr><td colspan="6">Tidak ada riwayat yang cocok.</td></tr>';
+ $('history-table-body').innerHTML=records.length?records.map(r=>`<tr><td class="history-check-cell"><input type="checkbox" data-select-id="${safe(r.recordId)}" aria-label="Pilih ${safe(r.fileName)} (${safe(r.recordId)})"></td><td>${safe(r.date.split('-').reverse().join('/'))}<small>${safe(r.recordId)}</small></td><td>${safe(r.type)}</td><td>${safe(r.person)}</td><td>${safe(r.plate)}</td><td>${safe(r.fileName)}</td><td class="history-action-cell"><button type="button" class="row-action view" data-view-id="${safe(r.recordId)}" data-has-pdf="${!!r.hasPdf}">View</button><button type="button" class="row-action" data-download-id="${safe(r.recordId)}" data-has-pdf="${!!r.hasPdf}">⬇ Download</button><button type="button" class="row-action delete" data-delete-id="${safe(r.recordId)}">🗑 Hapus</button></td></tr>`).join(''):'<tr><td colspan="7">Tidak ada riwayat yang cocok.</td></tr>';
+ for(const c of $('history-table-body').querySelectorAll('[data-select-id]'))c.onchange=()=>{if(state.active||!state.historyReady)return;if(c.checked)state.historySelected.add(c.dataset.selectId);else state.historySelected.delete(c.dataset.selectId);clearHistoryDownload();updateHistoryControls();};
+ for(const b of document.querySelectorAll('[data-view-id]'))b.onclick=()=>viewHistoryPdf(b.dataset.viewId);
  for(const b of document.querySelectorAll('[data-download-id]'))b.onclick=()=>downloadFromHistory(b.dataset.downloadId);
  for(const b of document.querySelectorAll('[data-delete-id]'))b.onclick=()=>openDeleteDialog(b.dataset.deleteId);
+ updateHistoryControls();
 }
-async function loadHistory(page=1){
- if(state.active)return;clearHistoryDownload();
- if(!backendReady()){$('history-status').textContent='Riwayat cloud tersedia setelah URL Apps Script dikonfigurasi.';state.historyRecords=[];renderHistory();return;}
+function resetHistoryRows(){state.historyReady=false;state.historyKey='';state.historyRecords=[];state.historyPage=1;state.historyPages=1;state.historyTotal=0;state.historySelected.clear();renderHistory();$('history-page-info').textContent='Halaman 1 / 1';}
+function applyHistoryResult(data,key){
+ if(data.historyFilterVersion!==1)throw new Error('Filter riwayat memerlukan backend R3.6. Update Code.gs dan Deploy New version.');
+ state.historyRecords=data.records||[];state.historyPage=data.page||1;state.historyPages=data.pages||1;state.historyTotal=data.total||0;state.historyReady=true;state.historyKey=key;
+ $('history-page-info').textContent=`Halaman ${state.historyPage} / ${state.historyPages}`;
+ $('history-status').textContent=`${state.historyTotal} laporan aktif ditemukan. Ditampilkan maksimal 75 laporan per halaman.`;renderHistory();
+}
+async function loadHistory(page=1,reset=false){
+ if(state.active||state.view!=='history')return;clearTimeout(state.searchTimer);clearHistoryDownload();clearError();
+ const filters=historyFilters(),key=JSON.stringify(filters);if(reset||key!==state.historyKey){resetHistoryRows();page=1;}
+ if(!backendReady()){resetHistoryRows();$('history-status').textContent='Riwayat cloud tersedia setelah URL Apps Script dikonfigurasi.';return;}
+ try{validateHistoryFilters(filters);}catch(e){resetHistoryRows();alertError(e.message);$('history-status').textContent='Periksa rentang tanggal.';return;}
  setBusy(true,'Mengambil Riwayat Form...');
- try{
-  const data=await postGAS({action:'listRecords',page,search:value('history-search')});
-  state.historyRecords=data.records||[];state.historyPage=data.page||1;state.historyPages=data.pages||1;state.historyTotal=data.total||0;
-  renderHistory();
-  $('history-page-info').textContent=`Halaman ${state.historyPage} / ${state.historyPages}`;
-  $('history-prev').disabled=state.historyPage<=1;$('history-next').disabled=state.historyPage>=state.historyPages;
-  $('history-status').textContent=`${state.historyTotal} laporan aktif ditemukan. Ditampilkan maksimal 75 laporan per halaman.`;
- }catch(e){state.historyRecords=[];renderHistory();alertError('Riwayat gagal dimuat: '+e.message);$('history-status').textContent='Gagal mengambil arsip. Periksa koneksi atau konfigurasi backend.';}
+ try{const data=await postGAS({action:'listRecords',page,...filters});applyHistoryResult(data,key);}
+ catch(e){resetHistoryRows();alertError('Riwayat gagal dimuat: '+e.message);$('history-status').textContent='Gagal mengambil arsip. Periksa koneksi atau konfigurasi backend.';}
  finally{setBusy(false);}
+}
+function historyFilterChanged(debounce=false){
+ if(state.active)return;clearTimeout(state.searchTimer);clearHistoryDownload();resetHistoryRows();clearError();$('history-status').textContent='Memuat hasil filter baru...';
+ if(debounce)state.searchTimer=setTimeout(()=>loadHistory(1,true),350);else loadHistory(1,true);
+}
+async function selectAllHistory(){
+ if(state.active||!state.historyReady||state.historyKey!==historyFilterKey())return;
+ clearHistoryDownload();if(!$('history-select-all').checked){clearHistorySelection();return;}
+ const filters=historyFilters(),key=JSON.stringify(filters);state.historySelectingAll=true;setBusy(true,'Memilih semua hasil filter...');clearError();
+ try{
+  const data=await postGAS({action:'listRecords',page:state.historyPage,...filters,selectAll:true});
+  if(data.historyFilterVersion!==1||!Array.isArray(data.selectionIds)||new Set(data.selectionIds).size!==data.total)throw new Error('Daftar pilihan dari backend tidak lengkap. Muat riwayat kembali.');
+  state.historySelected=new Set(data.selectionIds);applyHistoryResult(data,key);
+ }catch(e){state.historySelected.clear();alertError('Tidak berhasil memilih semua: '+e.message);}
+ finally{state.historySelectingAll=false;setBusy(false);}
+}
+async function fetchHistoryPdf(id){
+ const data=await postGAS({action:'downloadPdf',recordId:id});
+ if(data.recordId!==id)throw new Error('ID PDF tidak sesuai dengan dokumen yang dipilih.');
+ if(!/^[a-f0-9]{64}$/i.test(String(data.pdfSha256||'')))throw new Error('Checksum PDF arsip tidak tersedia.');
+ const bytes=await archivedPdf(data);
+ const name=window.FleetHistoryZip?.safePdfName(data.fileName||id+'.pdf')||data.fileName||id+'.pdf';
+ return {id,name,bytes};
+}
+function showHistoryDownload(blob,name,count){
+ clearHistoryDownload();const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.className='btn btn-ghost';a.textContent=count===1?'⬇ Unduh PDF':'⬇ Unduh ZIP ('+count+' PDF)';
+ $('history-download-title').textContent=count===1?'PDF dari Google Drive siap diunduh.':`ZIP berisi ${count} PDF dari Google Drive siap diunduh.`;
+ $('history-download-text').textContent='Tekan tombol di bawah untuk menyimpan file ke perangkat.';
+ $('history-download-link').replaceChildren(a);$('history-download-ready').hidden=false;$('history-download-ready').scrollIntoView({behavior:'smooth',block:'nearest'});toast('Arsip siap. Tekan tombol unduh.');
 }
 async function downloadFromHistory(id){
- if(state.active)return;const row=state.historyRecords.find(r=>r.recordId===id);if(!row)return;
- clearHistoryDownload();
- setBusy(true,'Mengunduh PDF dari Google Drive...');
- try{
-  const data=await postGAS({action:'downloadPdf',recordId:id});
-  const bytes=await archivedPdf(data);
-  const a=downloadable(bytes,data.fileName||row.fileName);$('history-download-link').replaceChildren(a);$('history-download-ready').hidden=false;
-  $('history-download-ready').scrollIntoView({behavior:'smooth',block:'nearest'});
-  // A second, visible user-initiated link remains available for Safari/iOS.
-  toast('PDF arsip siap. Tekan Unduh PDF.');
- }catch(e){alertError('Tidak berhasil mengunduh PDF: '+e.message);}
+ if(state.active||!state.historyReady||state.historyKey!==historyFilterKey())return;clearHistoryDownload();clearError();setBusy(true,'Mengunduh PDF dari Google Drive...');
+ try{const file=await fetchHistoryPdf(id);showHistoryDownload(new Blob([file.bytes],{type:'application/pdf'}),file.name,1);}
+ catch(e){alertError('Tidak berhasil mengunduh PDF: '+e.message);}
  finally{setBusy(false);}
 }
+function historyZipName(filters){const kind={P2H:'P2H',CLEAN:'Kebersihan_Truck'}[filters.formType]||'All_Form';const period=(filters.dateFrom||filters.dateTo)?`${filters.dateFrom?filters.dateFrom.split('-').reverse().join('-'):'Awal'}_sd_${filters.dateTo?filters.dateTo.split('-').reverse().join('-'):'Akhir'}`:'All_Date';return `Riwayat_${kind}_${period}.zip`;}
+async function bulkDownloadHistory(){
+ if(state.active||!state.historyReady||state.historyKey!==historyFilterKey()||!state.historySelected.size)return;
+ const ids=[...state.historySelected],filters=historyFilters();clearHistoryDownload();clearError();
+ if(ids.length===1){await downloadFromHistory(ids[0]);return;}
+ const zip=window.FleetHistoryZip;if(!zip){alertError('Komponen ZIP belum dimuat. Admin: update history-zip.js dan refresh website.');return;}
+ if(ids.length>zip.MAX_FILES){alertError(`Pilihan ${ids.length} laporan melebihi batas ${zip.MAX_FILES} PDF per ZIP. Persempit filter dan unduh per kelompok.`);return;}
+ const entries=[];let total=0,current='';state.bulkCancelled=false;
+ $('history-bulk-progress').hidden=false;$('history-bulk-cancel').disabled=false;$('history-bulk-meter').max=ids.length;$('history-bulk-meter').value=0;
+ $('history-bulk-status').textContent=`Menyiapkan 0 / ${ids.length} PDF...`;setBusy(true,'Menyiapkan ZIP...');
+ try{
+  for(let i=0;i<ids.length;i++){
+   if(state.bulkCancelled)throw new Error('Proses dibatalkan.');current=ids[i];$('history-bulk-status').textContent=`Mengambil PDF ${i+1} / ${ids.length}...`;
+   const file=await fetchHistoryPdf(current);if(state.bulkCancelled)throw new Error('Proses dibatalkan.');
+   total+=file.bytes.length;if(total>zip.MAX_BYTES)throw new Error('Total PDF melebihi batas aman 100 MiB. Persempit filter tanggal dan unduh per kelompok.');
+   entries.push(file);$('history-bulk-meter').value=i+1;
+  }
+  if(state.bulkCancelled)throw new Error('Proses dibatalkan.');current='';$('history-bulk-status').textContent=`Mengemas ${entries.length} PDF ke ZIP...`;
+  const archive=zip.pack(entries);showHistoryDownload(archive,historyZipName(filters),ids.length);
+ }catch(e){if(state.bulkCancelled)toast('Unduhan dibatalkan; tidak ada ZIP dibuat.');else alertError(`ZIP belum dibuat${current?' (dokumen '+current+')':''}: ${e.message} Tidak ada file yang diabaikan. Coba ulang atau sesuaikan pilihan.`);}
+ finally{$('history-bulk-progress').hidden=true;entries.length=0;state.bulkCancelled=false;setBusy(false);}
+}
+// Preview uses the exact stored PDF, never re-generates a report. PDF.js is
+// lazy-loaded solely for rendering; a local Blob/native viewer is the fallback.
+const PDFJS_ROOT='https://cdn.jsdelivr.net/npm/pdfjs-dist@5.5.207/';
+let pdfjsPromise=null,historyPreview=null;
+function loadPdfJs(){if(!pdfjsPromise)pdfjsPromise=import(PDFJS_ROOT+'legacy/build/pdf.min.mjs').then(lib=>{lib.GlobalWorkerOptions.workerSrc=PDFJS_ROOT+'legacy/build/pdf.worker.min.mjs';return lib;}).catch(e=>{pdfjsPromise=null;throw e;});return pdfjsPromise;}
+function cleanupHistoryPreview(){
+ const p=historyPreview;historyPreview=null;if(p){clearTimeout(p.loadTimer);try{p.task?.cancel();}catch(_){}try{Promise.resolve(p.loading?.destroy()).catch(()=>{});}catch(_){}URL.revokeObjectURL(p.url);}
+ const frame=$('history-preview-frame');frame.removeAttribute('src');frame.hidden=true;const canvas=$('history-preview-canvas');canvas.width=1;canvas.height=1;canvas.hidden=true;
+ $('history-preview-open').removeAttribute('href');$('history-preview-download').removeAttribute('href');$('history-preview-nav').hidden=true;$('history-preview-zoom').hidden=true;
+}
+function previewFallback(p){if(historyPreview!==p)return;$('history-preview-nav').hidden=true;$('history-preview-zoom').hidden=true;$('history-preview-canvas').hidden=true;const frame=$('history-preview-frame');frame.src=p.url;frame.hidden=false;$('history-preview-status').textContent='Penampil PDF bawaan browser. Jika halaman tidak tampil lengkap, tekan Buka PDF untuk melihat arsip asli di tab baru.';}
+function syncPreviewControls(p){if(historyPreview!==p)return;const busy=p.rendering; $('history-preview-page').textContent=`Halaman ${p.page} / ${p.doc.numPages}`;$('history-preview-prev').disabled=busy||p.page<=1;$('history-preview-next').disabled=busy||p.page>=p.doc.numPages;$('history-preview-minus').disabled=busy||p.zoom<=.5;$('history-preview-plus').disabled=busy||p.zoom>=3;$('history-preview-fit').disabled=busy;}
+async function renderPreviewPage(p){
+ if(historyPreview!==p||!p.doc||p.rendering)return;p.rendering=true;syncPreviewControls(p);$('history-preview-status').textContent='Merender halaman PDF...';
+ try{
+  const page=await p.doc.getPage(p.page);if(historyPreview!==p)return;
+  const base=page.getViewport({scale:1}),body=$('history-preview-body'),canvas=$('history-preview-canvas');
+  const fit=Math.max(.15,Math.min(2,(body.clientWidth-28)/base.width)),viewport=page.getViewport({scale:fit*p.zoom});
+  const pixelScale=Math.min(window.devicePixelRatio||1,2,Math.sqrt(8000000/(viewport.width*viewport.height)));
+  canvas.width=Math.max(1,Math.floor(viewport.width*pixelScale));canvas.height=Math.max(1,Math.floor(viewport.height*pixelScale));canvas.style.width=Math.round(viewport.width)+'px';canvas.style.height=Math.round(viewport.height)+'px';canvas.hidden=false;
+  p.task=page.render({canvas,canvasContext:canvas.getContext('2d'),viewport,transform:pixelScale!==1?[pixelScale,0,0,pixelScale,0,0]:null});await p.task.promise;
+  if(historyPreview===p){$('history-preview-status').textContent=`PDF asli • ${p.doc.numPages} halaman • Zoom ${Math.round(p.zoom*100)}%`;body.scrollTop=0;body.scrollLeft=0;}
+ }catch(e){if(historyPreview===p)previewFallback(p);}
+ finally{p.rendering=false;if(historyPreview===p)syncPreviewControls(p);}
+}
+async function viewHistoryPdf(id){
+ if(state.active||!state.historyReady||state.historyKey!==historyFilterKey())return;clearError();setBusy(true,'Memuat PDF asli dari Google Drive...');let file;
+ try{file=await fetchHistoryPdf(id);}catch(e){alertError('Tidak berhasil membuka PDF: '+e.message);return;}finally{setBusy(false);}
+ cleanupHistoryPreview();const url=URL.createObjectURL(new Blob([file.bytes],{type:'application/pdf'})),p={url,page:1,zoom:1,doc:null,loading:null,task:null,rendering:false};historyPreview=p;
+ const dialog=$('history-preview-modal');$('history-preview-title').textContent=file.name;$('history-preview-status').textContent='Memuat penampil PDF...';const open=$('history-preview-open'),download=$('history-preview-download');open.href=url;download.href=url;download.download=file.name;dialog.showModal();
+ try{
+  const lib=await Promise.race([loadPdfJs(),new Promise((_,reject)=>{p.loadTimer=setTimeout(()=>reject(new Error('Penampil PDF belum tersedia.')),20000);})]);clearTimeout(p.loadTimer);if(historyPreview!==p)return;
+  p.loading=lib.getDocument({data:file.bytes,isEvalSupported:false,useWasm:false,cMapUrl:PDFJS_ROOT+'cmaps/',cMapPacked:true,standardFontDataUrl:PDFJS_ROOT+'standard_fonts/'});p.doc=await Promise.race([p.loading.promise,new Promise((_,reject)=>{p.loadTimer=setTimeout(()=>reject(new Error('PDF belum selesai dimuat.')),25000);})]);clearTimeout(p.loadTimer);if(historyPreview!==p)return;
+  $('history-preview-nav').hidden=false;$('history-preview-zoom').hidden=false;await renderPreviewPage(p);
+ }catch(e){clearTimeout(p.loadTimer);try{Promise.resolve(p.loading?.destroy()).catch(()=>{});}catch(_){}previewFallback(p);}
+}
+function changePreview(pageDelta,zoom){const p=historyPreview;if(!p?.doc||p.rendering)return;if(pageDelta)p.page=Math.max(1,Math.min(p.doc.numPages,p.page+pageDelta));if(zoom!==undefined)p.zoom=Math.max(.5,Math.min(3,zoom));renderPreviewPage(p);}
 function openDeleteDialog(id){
- if(state.active)return;const row=state.historyRecords.find(r=>r.recordId===id);if(!row)return;
+ if(state.active||!state.historyReady||state.historyKey!==historyFilterKey())return;const row=state.historyRecords.find(r=>r.recordId===id);if(!row)return;
  if(!window.confirm(`Tahap 1/2 — Anda yakin ingin menghapus dari riwayat?\n\n${row.type}\n${row.person} | ${row.date}\n${row.fileName}\n\nBaris laporan dan evidence akan dihapus dari Google Sheets. PDF dan foto masuk Trash Google Drive. Jejak audit tetap tersimpan.`))return;
  state.deletionTarget=row;
  $('delete-desc').textContent=`Dokumen: ${row.fileName} | ${row.plate} | ID ${row.recordId}`;
@@ -338,18 +439,19 @@ function validateDeleteDialog(){
 }
 async function confirmDeleteFromHistory(){
  const row=state.deletionTarget;if(!row||state.active||!value('delete-actor')||!value('delete-access-code')||value('delete-phrase')!=='HAPUS')return;
- const actor=value('delete-actor'),code=value('delete-access-code');$('delete-error').hidden=true;
+ const actor=value('delete-actor'),code=value('delete-access-code');let deleted=false;$('delete-error').hidden=true;
  setBusy(true,'Menghapus laporan dan evidence dari database...');
  try{
   await postGAS({action:'health'}); // Reject mismatched API before destructive request.
   const result=await postGAS({action:'deleteRecord',recordId:row.recordId,confirmRecordId:row.recordId,confirmText:'HAPUS',actorName:actor,accessCode:code});
   if(result.recordId!==row.recordId||!result.deleted||!result.deletionVerified)throw new Error('Server belum mengonfirmasi penghapusan database. Coba lagi dengan dokumen yang sama.');
-  clearHistoryDownload();state.historyRecords=state.historyRecords.filter(x=>x.recordId!==row.recordId);state.deletionTarget=null;$('delete-modal').hidden=true;renderHistory();
-  state.historyTotal=Math.max(0,state.historyTotal-1);
+  clearHistoryDownload();state.historyRecords=state.historyRecords.filter(x=>x.recordId!==row.recordId);state.historySelected.delete(row.recordId);state.deletionTarget=null;$('delete-modal').hidden=true;
+  state.historyTotal=Math.max(0,state.historyTotal-1);state.historyPages=Math.max(1,Math.ceil(state.historyTotal/75));deleted=true;renderHistory();
   $('history-status').textContent=`${state.historyTotal} laporan aktif. Dokumen ${row.recordId} dihapus dari database.`;
   toast('Laporan dan evidence terhapus dari Sheets. Folder masuk Trash Drive. Audit tetap ada.');
  }catch(e){$('delete-error').textContent='Gagal menghapus: '+e.message;$('delete-error').hidden=false;}
  finally{$('delete-access-code').value='';setBusy(false);}
+ if(deleted)await loadHistory(Math.min(state.historyPage,state.historyPages));
 }
 function init(){
  initReferenceDropdowns();renderChecklist();renderClean();$('p-date').value=dateStr();$('p-time').value=timeStr();$('c-date').value=dateStr();
@@ -361,8 +463,16 @@ function init(){
  $('new-clean').onclick=()=>{if(state.active)return;if(confirm('Kosongkan form Kebersihan Truck dan seluruh foto yang sudah diambil?'))resetClean();};
  $('submit-p2h').onclick=submitP2H;$('submit-clean').onclick=submitClean;
  $('result-new').onclick=()=>{if(state.view==='p2h')resetP2H();else resetClean();};
- $('history-search').oninput=()=>{clearTimeout(state.searchTimer);state.searchTimer=setTimeout(()=>loadHistory(1),500);};
- $('history-refresh').onclick=()=>loadHistory(1);$('history-prev').onclick=()=>loadHistory(state.historyPage-1);$('history-next').onclick=()=>loadHistory(state.historyPage+1);
+ $('history-search').oninput=()=>historyFilterChanged(true);
+ for(const id of ['history-date-from','history-date-to','history-form-type'])$(id).onchange=()=>historyFilterChanged();
+ $('history-reset').onclick=()=>{if(state.active)return;for(const id of ['history-search','history-date-from','history-date-to','history-form-type'])$(id).value='';historyFilterChanged();};
+ $('history-refresh').onclick=()=>loadHistory(1,true);$('history-prev').onclick=()=>loadHistory(state.historyPage-1);$('history-next').onclick=()=>loadHistory(state.historyPage+1);
+ $('history-select-all').onchange=selectAllHistory;$('history-clear-selection').onclick=clearHistorySelection;$('history-bulk-download').onclick=bulkDownloadHistory;
+ $('history-bulk-cancel').onclick=()=>{state.bulkCancelled=true;$('history-bulk-cancel').disabled=true;$('history-bulk-status').textContent='Membatalkan setelah permintaan berjalan selesai...';};
+ $('history-preview-close').onclick=()=>$('history-preview-modal').close();$('history-preview-modal').addEventListener('close',cleanupHistoryPreview);
+ $('history-preview-prev').onclick=()=>changePreview(-1);$('history-preview-next').onclick=()=>changePreview(1);
+ $('history-preview-minus').onclick=()=>changePreview(0,(historyPreview?.zoom||1)-.25);$('history-preview-plus').onclick=()=>changePreview(0,(historyPreview?.zoom||1)+.25);$('history-preview-fit').onclick=()=>changePreview(0,1);
+ updateHistoryControls();
  $('delete-cancel').onclick=closeDeleteDialog;
  $('delete-actor').oninput=validateDeleteDialog;$('delete-access-code').oninput=validateDeleteDialog;$('delete-phrase').oninput=validateDeleteDialog;
  $('delete-confirm').onclick=confirmDeleteFromHistory;
